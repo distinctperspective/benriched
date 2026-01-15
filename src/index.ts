@@ -1,10 +1,10 @@
 import { Hono } from 'hono';
 import { cors } from 'hono/cors';
 import { logger } from 'hono/logger';
-import healthRoutes from './routes/health';
-import enrichRoutes from './routes/enrich';
-import { authMiddleware } from './middleware/auth';
-import { rateLimitMiddleware } from './middleware/rateLimit';
+import healthRoutes from './routes/health.js';
+import enrichRoutes from './routes/enrich.js';
+import { authMiddleware } from './middleware/auth.js';
+import { rateLimitMiddleware } from './middleware/rateLimit.js';
 
 const app = new Hono();
 

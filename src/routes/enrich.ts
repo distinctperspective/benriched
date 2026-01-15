@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { gateway } from '@ai-sdk/gateway';
-import { enrichDomainWithCost } from '@benriched/core';
+import { enrichDomainWithCost } from '../enrichment/enrich.js';
 import { saveCompany, getCompanyByDomain, CompanyRecord } from '../lib/supabase.js';
 import { saveEnrichmentRequest, EnrichmentRequestRecord } from '../lib/requests.js';
 

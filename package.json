@@ -2,25 +2,25 @@
   "name": "benriched",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "description": "Company enrichment API service",
-  "workspaces": [
-    "packages/*"
-  ],
   "scripts": {
-    "dev": "npm run dev --workspaces --parallel",
-    "build": "npm run build --workspaces",
-    "type-check": "npm run type-check --workspaces",
+    "dev": "tsx src/server.ts",
+    "build": "tsc",
+    "type-check": "tsc --noEmit",
     "enrich-test": "tsx scripts/enrich-test.ts"
   },
   "devDependencies": {
-    "@vercel/node": "^5.5.20",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^3.0.10",
     "@ai-sdk/openai": "^3.0.9",
+    "@hono/node-server": "^1.8.2",
+    "@supabase/supabase-js": "^2.39.3",
     "ai": "^6.0.23",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.3.1",
+    "hono": "^4.0.0"
   }
 }

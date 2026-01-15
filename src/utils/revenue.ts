@@ -1,5 +1,5 @@
-import { RevenueEvidence } from '@benriched/types';
-import { parseRevenueAmountToUsd, mapUsdToRevenueBand } from './parsing';
+import { RevenueEvidence } from '../types.js';
+import { parseRevenueAmountToUsd, mapUsdToRevenueBand } from './parsing.js';
 
 export function pickRevenueBandFromEvidence(
   evidence: RevenueEvidence[]

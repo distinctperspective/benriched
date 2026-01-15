@@ -7,7 +7,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Load env BEFORE importing app (gateway reads env on import)
-config({ path: resolve(__dirname, '../../..', '.env.local') });
+config({ path: resolve(__dirname, '..', '.env.local') });
 
 // Now import app after env is loaded
 const { serve } = await import('@hono/node-server');
