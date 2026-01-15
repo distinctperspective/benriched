@@ -66,23 +66,31 @@ Guidelines:
 
 **CRITICAL - YOU MUST SEARCH FOR REVENUE (Multiple Sources Required):**
 Step 1: Search "[company name] revenue" AND "[company name] annual sales" AND "[company name] million sales"
-Step 2: Check these HIGH-PRIORITY sources for revenue data:
+Step 2: **For PUBLIC companies (NYSE, NASDAQ, etc.)** - ALWAYS check SEC 10-K filings FIRST - these are the most accurate source
+Step 3: Search "[company name] press release revenue" - companies often announce revenue milestones
+Step 4: Check these HIGH-PRIORITY sources for revenue data:
   - Forbes, Inc Magazine, Business Insider, Bloomberg, Reuters
-  - Industry trade publications (e.g., Food Business News, Supermarket News, Progressive Grocer)
+  - Industry trade publications: Food Business News, Supermarket News, Meat+Poultry magazine, Progressive Grocer
   - Press releases on PR Newswire, Business Wire, GlobeNewswire
   - Inc 5000, Deloitte Fast 500, or other growth lists
   - Crunchbase funding rounds (can indicate revenue scale)
   - PitchBook, PrivCo if available
   - Company "About" or "Our Story" pages mentioning growth milestones
-Step 3: Search for marketing case studies or awards that mention revenue
-Step 4: If SUBSIDIARY, search "[parent company] [subsidiary name] segment revenue" and "[parent company] annual report"
-Step 5: LAST RESORT: Check ZoomInfo, Growjo, Owler - but mark these as LOW confidence estimates
+Step 5: If SUBSIDIARY, clearly distinguish parent vs subsidiary revenue:
+  - Search "[subsidiary name] revenue" separately from parent company
+  - Do NOT use parent company's total revenue for the subsidiary
+  - Look for segment reports in parent's annual filings
+Step 6: LAST RESORT: Check ZoomInfo, Growjo, Owler - but mark these as LOW confidence estimates
 
 **IMPORTANT - SOURCE RELIABILITY:**
 - MOST RELIABLE: SEC filings, press releases, Forbes/Inc/Bloomberg articles, trade publications
 - MODERATELY RELIABLE: Crunchbase, industry reports, marketing case studies, awards lists
 - LEAST RELIABLE: ZoomInfo, Growjo, Owler, Dun & Bradstreet, Manta (often outdated/wrong for private companies)
-- If ZoomInfo/Growjo shows <$5M but company has 50+ employees or national retail presence, the estimate is likely WRONG
+
+**SANITY CHECKS - Flag these as likely WRONG:**
+- If ZoomInfo/Growjo shows <$5M but company has 50+ employees, the estimate is likely WRONG
+- If ZoomInfo shows <$100M but company has 10,000+ employees, the estimate is DEFINITELY WRONG
+- If company has national retail presence or multiple manufacturing facilities, revenue is likely $50M+
 - ALWAYS search "[company name] Forbes" and "[company name] Inc magazine" for private company revenue
 
 **CRITICAL - AVOID COMPANY NAME CONFUSION:**
@@ -587,7 +595,24 @@ export async function pass2_analyzeContentWithUsage(
     const targetIcpMatches: TargetICPMatch[] = naicsCodes.filter(naics => targetIcpNaics.has(naics.code));
     const targetIcp = targetIcpMatches.length > 0;
     
+    // Valid revenue bands - reject any AI hallucinated bands
+    const VALID_REVENUE_BANDS = new Set([
+      '0-500K', '500K-1M', '1M-5M', '5M-10M', '10M-25M', '25M-75M',
+      '75M-200M', '200M-500M', '500M-1B', '1B-10B', '10B-100B', '100B-1T'
+    ]);
+    
     let finalRevenue = parsed.company_revenue || null;
+    
+    // Validate that the revenue band is one of our valid options
+    if (finalRevenue && !VALID_REVENUE_BANDS.has(finalRevenue)) {
+      console.log(`   ⚠️  Invalid revenue band "${finalRevenue}" - AI hallucinated a band, nulling`);
+      finalRevenue = null;
+      if (parsed.quality?.revenue) {
+        parsed.quality.revenue.confidence = 'low';
+        parsed.quality.revenue.reasoning = `Invalid revenue band "${parsed.company_revenue}" returned by AI - not in valid list`;
+      }
+    }
+    
     if (finalRevenue && parsed.quality?.revenue?.reasoning) {
       const revenueReasoning = parsed.quality.revenue.reasoning.toLowerCase();
       const hasEvidence = /\$|million|billion|thousand|zoominfo|press release|annual report|sec filing|crunchbase|owler|growjo/.test(revenueReasoning);
