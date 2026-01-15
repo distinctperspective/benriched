@@ -1094,9 +1094,14 @@ export async function enrichDomainWithCost(
     }
   }
 
-  // Recalculate revenue_pass after all revenue modifications
+  // Recalculate revenue_pass and target_icp after all revenue modifications
   const passingRevenueBandsForFinal = new Set(['10M-25M', '25M-75M', '75M-200M', '200M-500M', '500M-1B', '1B-10B', '10B-100B', '100B-1T']);
   result.revenue_pass = result.company_revenue ? passingRevenueBandsForFinal.has(result.company_revenue) : false;
+  
+  // Recalculate target_icp with final revenue
+  const hasPassingRevenueFinal = result.company_revenue ? passingRevenueBandsForFinal.has(result.company_revenue) : false;
+  const isUsPresenceFinal = result.is_us_hq || result.is_us_subsidiary;
+  result.target_icp = (result.target_icp_matches?.length > 0) && isUsPresenceFinal && hasPassingRevenueFinal;
 
   // Build cost breakdown
   const firecrawlCost = calculateFirecrawlCost(totalFirecrawlCredits);
