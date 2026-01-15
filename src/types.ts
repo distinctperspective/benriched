@@ -53,6 +53,14 @@ export interface DiagnosticInfo {
     adjusted_band: string | null;
     reason: string;
   };
+  deep_research?: {
+    triggered: boolean;
+    forced: boolean;
+    reasons: string[];
+    revenue_found?: string | null;
+    employees_found?: number | null;
+    location_found?: string | null;
+  };
 }
 
 export interface EnrichmentResult {

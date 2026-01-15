@@ -974,6 +974,19 @@ export async function enrichDomainWithCost(
   const pass2Ms = Date.now() - pass2StartTime;
   let result = pass2Result;
   
+  // Add deep research info to diagnostics
+  const deepResearchTriggered = forceDeepResearch || shouldTriggerDeepResearch(outlierFlags);
+  if (result.diagnostics) {
+    result.diagnostics.deep_research = {
+      triggered: deepResearchTriggered,
+      forced: forceDeepResearch,
+      reasons: deepResearchResult?.triggered_by || [],
+      revenue_found: deepResearchResult?.revenue?.amount || null,
+      employees_found: deepResearchResult?.employees?.count || null,
+      location_found: deepResearchResult?.location ? `${deepResearchResult.location.city}, ${deepResearchResult.location.country}` : null
+    };
+  }
+  
   // ALWAYS use our scraped/Pass 1 LinkedIn URL if we found one (more reliable than Pass 2)
   if (linkedinFromScrape) {
     let linkedinUrl = linkedinFromScrape;

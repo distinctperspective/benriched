@@ -184,9 +184,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       // Log the request (always, even without hs_company_id)
       // Determine request type: force_refresh, retry (existed but re-enriching), or new_enrichment
+      // Also track if deep_research was used
       let requestType = 'new_enrichment';
-      if (force_refresh) {
+      if (force_refresh && deep_research) {
+        requestType = 'force_refresh_deep';
+      } else if (force_refresh) {
         requestType = 'force_refresh';
+      } else if (deep_research) {
+        requestType = 'deep_research';
       } else if (companyExistedBefore) {
         requestType = 'retry'; // Company existed but we're re-enriching (likely after an error)
       }
