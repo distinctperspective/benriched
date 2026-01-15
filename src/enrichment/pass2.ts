@@ -245,7 +245,8 @@ export async function pass2_analyzeContent(
       quality,
       target_icp: targetIcp,
       target_icp_matches: targetIcpMatches,
-      revenue_pass: finalRevenue ? passingRevenueBands.has(finalRevenue) : false
+      revenue_pass: finalRevenue ? passingRevenueBands.has(finalRevenue) : false,
+      industry_pass: targetIcpMatches.length > 0
     };
   } catch (error) {
     console.error('Pass 2 parsing error:', error);
@@ -273,7 +274,8 @@ export async function pass2_analyzeContent(
       },
       target_icp: false,
       target_icp_matches: [],
-      revenue_pass: false
+      revenue_pass: false,
+      industry_pass: false
     };
   }
 }

@@ -83,6 +83,7 @@ export interface EnrichmentResult {
   target_icp: boolean;
   target_icp_matches: TargetICPMatch[];
   revenue_pass: boolean;
+  industry_pass: boolean;
   diagnostics?: DiagnosticInfo;
 }
 

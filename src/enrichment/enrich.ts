@@ -640,6 +640,7 @@ export async function pass2_analyzeContentWithUsage(
       target_icp: targetIcp,
       target_icp_matches: targetIcpMatches,
       revenue_pass: finalRevenue ? passingRevenueBands.has(finalRevenue) : false,
+      industry_pass: targetIcpMatches.length > 0,
       diagnostics
     };
     
@@ -670,7 +671,8 @@ export async function pass2_analyzeContentWithUsage(
         },
         target_icp: false,
         target_icp_matches: [],
-        revenue_pass: false
+        revenue_pass: false,
+        industry_pass: false
       },
       usage: aiUsage
     };
