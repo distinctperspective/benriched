@@ -295,6 +295,7 @@ function detectEntityMismatch(
 interface Pass1WithUsage {
   result: Pass1Result;
   usage: AIUsage;
+  rawResponse?: string;
 }
 
 export async function pass1_identifyUrls(domain: string, model: any, modelId: string = 'perplexity/sonar-pro'): Promise<Pass1Result> {
@@ -367,7 +368,7 @@ Return ALL revenue figures found with sources. Return ONLY valid JSON.`,
       console.log(`   🏢 Parent company: ${result.parent_company}`);
     }
     
-    return { result, usage: aiUsage };
+    return { result, usage: aiUsage, rawResponse: text };
   } catch {
     return {
       result: {
@@ -375,7 +376,8 @@ Return ALL revenue figures found with sources. Return ONLY valid JSON.`,
         urls_to_crawl: [`https://${domain}`, `https://${domain}/about`, `https://${domain}/contact`],
         search_queries: [`${domain} company headquarters`, `${domain} company revenue employees`]
       },
-      usage: aiUsage
+      usage: aiUsage,
+      rawResponse: text
     };
   }
 }
@@ -421,6 +423,7 @@ REQUIRED STEPS:
 interface Pass2WithUsage {
   result: EnrichmentResult;
   usage: AIUsage;
+  rawResponse?: string;
 }
 
 export async function pass2_analyzeContent(
@@ -644,7 +647,7 @@ export async function pass2_analyzeContentWithUsage(
       diagnostics
     };
     
-    return { result, usage: aiUsage };
+    return { result, usage: aiUsage, rawResponse: text };
   } catch {
     return {
       result: {
@@ -674,7 +677,8 @@ export async function pass2_analyzeContentWithUsage(
         revenue_pass: false,
         industry_pass: false
       },
-      usage: aiUsage
+      usage: aiUsage,
+      rawResponse: text
     };
   }
 }
@@ -740,7 +744,7 @@ export async function enrichDomainWithCost(
   let pass1StartTime = Date.now();
   
   // PASS 1: Identify URLs to crawl
-  let { result: pass1Result, usage: pass1Usage } = await pass1_identifyUrlsWithUsage(domain, searchModel, searchModelId);
+  let { result: pass1Result, usage: pass1Usage, rawResponse: pass1RawResponse } = await pass1_identifyUrlsWithUsage(domain, searchModel, searchModelId);
   const pass1Ms = Date.now() - pass1StartTime;
   console.log(`   📝 Company: ${pass1Result.company_name}`);
   
@@ -972,7 +976,7 @@ export async function enrichDomainWithCost(
   }
   
   const pass2StartTime = Date.now();
-  const { result: pass2Result, usage: pass2Usage } = await pass2_analyzeContentWithUsage(domain, pass1Result.company_name, scrapedContent, analysisModel, pass1Result, analysisModelId);
+  const { result: pass2Result, usage: pass2Usage, rawResponse: pass2RawResponse } = await pass2_analyzeContentWithUsage(domain, pass1Result.company_name, scrapedContent, analysisModel, pass1Result, analysisModelId);
   const pass2Ms = Date.now() - pass2StartTime;
   let result = pass2Result;
   
@@ -1159,5 +1163,12 @@ export async function enrichDomainWithCost(
   console.log(`   Pass 2: ${pass2Ms}ms`);
   console.log(`   TOTAL: ${totalMs}ms`);
   
-  return { ...result, cost, performance };
+  // Build raw API responses object
+  const raw_api_responses = {
+    pass1: pass1RawResponse,
+    pass2: pass2RawResponse,
+    deepResearch: deepResearchResult?.rawResponse
+  };
+
+  return { ...result, cost, performance, raw_api_responses };
 }

@@ -136,7 +136,14 @@ export interface PerformanceMetrics {
   avg_scrape_ms: number;
 }
 
+export interface RawApiResponses {
+  pass1?: string;
+  pass2?: string;
+  deepResearch?: string;
+}
+
 export interface EnrichmentResultWithCost extends EnrichmentResult {
   cost: CostBreakdown;
   performance: PerformanceMetrics;
+  raw_api_responses?: RawApiResponses;
 }

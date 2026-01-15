@@ -23,6 +23,7 @@ export interface DeepResearchResult {
   } | null;
   triggered_by: string[];
   usage: AIUsage;
+  rawResponse?: string;
 }
 
 export interface OutlierFlags {
@@ -161,10 +162,12 @@ export async function runDeepResearch(
   let revenueResult = null;
   let employeeResult = null;
   let locationResult = null;
+  const rawResponses: string[] = [];
 
   for (const result of results) {
     totalInputTokens += result.usage?.inputTokens || 0;
     totalOutputTokens += result.usage?.outputTokens || 0;
+    if (result.rawText) rawResponses.push(result.rawText);
 
     if (result.type === 'revenue') {
       revenueResult = result.data;
@@ -191,6 +194,7 @@ export async function runDeepResearch(
       totalTokens: totalInputTokens + totalOutputTokens,
       costUsd,
     },
+    rawResponse: rawResponses.join('\n---\n'),
   };
 }
 
@@ -237,6 +241,7 @@ If no reliable data found, return: {"revenue": null, "source": null, "year": nul
         confidence: parsed.confidence || 'low',
       },
       usage,
+      rawText: text,
     };
   } catch (error) {
     console.log(`   ⚠️ Revenue query failed`);
@@ -244,6 +249,7 @@ If no reliable data found, return: {"revenue": null, "source": null, "year": nul
       type: 'revenue',
       data: null,
       usage: { inputTokens: 0, outputTokens: 0 },
+      rawText: '',
     };
   }
 }
@@ -294,6 +300,7 @@ If no reliable data found, return: {"employees": null, "source": null, "confiden
         confidence: parsed.confidence || 'low',
       },
       usage,
+      rawText: text,
     };
   } catch (error) {
     console.log(`   ⚠️ Employee query failed`);
@@ -301,6 +308,7 @@ If no reliable data found, return: {"employees": null, "source": null, "confiden
       type: 'employees',
       data: null,
       usage: { inputTokens: 0, outputTokens: 0 },
+      rawText: '',
     };
   }
 }
@@ -342,6 +350,7 @@ Return ONLY valid JSON:
         is_us_subsidiary: parsed.is_us_subsidiary || false,
       },
       usage,
+      rawText: text,
     };
   } catch (error) {
     console.log(`   ⚠️ Location query failed`);
@@ -349,6 +358,7 @@ Return ONLY valid JSON:
       type: 'location',
       data: null,
       usage: { inputTokens: 0, outputTokens: 0 },
+      rawText: '',
     };
   }
 }
