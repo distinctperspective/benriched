@@ -23,44 +23,26 @@ function calculateAICost(model: string, inputTokens: number, outputTokens: numbe
 // PASS 1 PROMPT - EXACT COPY FROM TEST SCRIPT
 // ============================================================================
 
-const PASS1_PROMPT = `Research the company at this domain. Answer these questions:
+const PASS1_PROMPT = `What is this company's annual revenue and how many employees do they have?
 
-1. What is the company's annual revenue? Search their website, Forbes, press releases, SEC filings.
-2. How many employees do they have? Check LinkedIn, company website.
-3. Where is their headquarters located?
-4. What URLs should we scrape for more detailed information?
+Search their website, Forbes, press releases, news articles, and SEC filings for revenue.
+Check LinkedIn and their website for employee count.
+For PUBLIC companies, check SEC 10-K filings.
+Mark ZoomInfo/Growjo/Owler figures as estimates.
 
-For PUBLIC companies (NYSE, NASDAQ), check SEC 10-K filings first.
-For SUBSIDIARIES, find the subsidiary's revenue, not the parent company's total.
-Mark ZoomInfo/Growjo/Owler figures as estimates - they're often wrong for private companies.
-
-After finding this information, format your response as JSON:
+After finding the data, format as JSON:
 {
   "company_name": "Company Name",
   "parent_company": "Parent company if subsidiary, otherwise null",
-  "headquarters": {
-    "city": "City",
-    "state": "State or null",
-    "country": "Country",
-    "country_code": "US"
-  },
-  "urls_to_crawl": [
-    "https://company.com",
-    "https://company.com/about",
-    "https://linkedin.com/company/...",
-    "https://glassdoor.com/...",
-    "https://zoominfo.com/..."
-  ],
+  "headquarters": {"city": "City", "state": "State", "country": "Country", "country_code": "US"},
+  "urls_to_crawl": ["https://company.com", "https://linkedin.com/company/..."],
   "revenue_found": [
-    {"amount": "$12.5 billion", "source": "company website", "year": "2024", "is_estimate": false},
-    {"amount": "$11 billion", "source": "ZoomInfo", "year": "2024", "is_estimate": true}
+    {"amount": "$1.4 billion", "source": "company website", "year": "2024", "is_estimate": false}
   ],
-  "employee_count_found": {"amount": "53,000", "source": "LinkedIn"}
+  "employee_count_found": {"amount": "4,000", "source": "LinkedIn"}
 }
 
-Include URLs for: company website, about page, LinkedIn, Glassdoor, Indeed, ZoomInfo, Crunchbase, Wikipedia.
-Return ALL revenue figures found with their sources - we'll pick the best one later.
-Return ONLY valid JSON, no markdown.`;
+Return ALL revenue figures found. Return ONLY valid JSON.`;
 
 // ============================================================================
 // PASS 2 PROMPT - EXACT COPY FROM TEST SCRIPT
