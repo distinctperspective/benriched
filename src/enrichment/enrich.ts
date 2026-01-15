@@ -639,7 +639,7 @@ export async function pass2_analyzeContentWithUsage(
       },
       target_icp: targetIcp,
       target_icp_matches: targetIcpMatches,
-      revenue_pass: hasPassingRevenue || false,
+      revenue_pass: finalRevenue ? passingRevenueBands.has(finalRevenue) : false,
       diagnostics
     };
     
