@@ -124,6 +124,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
+    // Check if company already exists (to determine if this is a retry vs new)
+    const { data: existingBeforeEnrich } = await supabase
+      .from('companies')
+      .select('id')
+      .eq('domain', normalizedDomain)
+      .single();
+    const companyExistedBefore = !!existingBeforeEnrich;
+
     // Async enrichment function
     const doEnrichment = async () => {
       const searchModel = gateway(SEARCH_MODEL_ID);
@@ -174,8 +182,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .single();
 
       // Log the request (always, even without hs_company_id)
-      // Determine request type based on whether this was a force_refresh or new enrichment
-      const requestType = force_refresh ? 'force_refresh' : 'new_enrichment';
+      // Determine request type: force_refresh, retry (existed but re-enriching), or new_enrichment
+      let requestType = 'new_enrichment';
+      if (force_refresh) {
+        requestType = 'force_refresh';
+      } else if (companyExistedBefore) {
+        requestType = 'retry'; // Company existed but we're re-enriching (likely after an error)
+      }
       
       if (savedCompany) {
         const responseTimeMs = Date.now() - requestStartTime;
