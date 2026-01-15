@@ -1,0 +1,32 @@
+import { Hono } from 'hono';
+import { cors } from 'hono/cors';
+import { logger } from 'hono/logger';
+import healthRoutes from './routes/health';
+import enrichRoutes from './routes/enrich';
+import { authMiddleware } from './middleware/auth';
+import { rateLimitMiddleware } from './middleware/rateLimit';
+
+const app = new Hono();
+
+app.use(logger());
+app.use(cors());
+
+app.get('/', (c) => {
+  return c.json({
+    name: 'Benriched API',
+    version: '0.1.0',
+    description: 'Company enrichment API service',
+    endpoints: {
+      health: 'GET /health',
+      enrich: 'POST /enrich'
+    }
+  });
+});
+
+app.route('/health', healthRoutes);
+
+app.use('/enrich', rateLimitMiddleware);
+app.use('/enrich', authMiddleware);
+app.route('/enrich', enrichRoutes);
+
+export default app;

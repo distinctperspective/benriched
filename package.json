@@ -1,0 +1,25 @@
+{
+  "name": "benriched",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Company enrichment API service",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspaces --parallel",
+    "build": "npm run build --workspaces",
+    "type-check": "npm run type-check --workspaces",
+    "enrich-test": "tsx scripts/enrich-test.ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3",
+    "tsx": "^4.7.0"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^3.0.9",
+    "@ai-sdk/gateway": "^3.0.10",
+    "ai": "^6.0.23",
+    "dotenv": "^16.3.1"
+  }
+}

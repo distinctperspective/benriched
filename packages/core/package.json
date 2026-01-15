@@ -1,0 +1,20 @@
+{
+  "name": "@benriched/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@benriched/types": "file:../types",
+    "ai": "^6.0.23",
+    "@ai-sdk/gateway": "^3.0.10",
+    "dotenv": "^16.3.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  }
+}

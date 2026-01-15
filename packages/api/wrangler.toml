@@ -1,0 +1,19 @@
+name = "benriched-api"
+main = "src/index.ts"
+compatibility_date = "2024-01-15"
+node_compat = true
+
+[env.production]
+name = "benriched-api-prod"
+
+[env.staging]
+name = "benriched-api-staging"
+
+[vars]
+ENVIRONMENT = "development"
+
+[[env.production.vars]]
+ENVIRONMENT = "production"
+
+[[env.staging.vars]]
+ENVIRONMENT = "staging"
