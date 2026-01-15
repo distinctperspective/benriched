@@ -161,8 +161,9 @@ export function validateRevenueVsEmployees(
     return { adjustedRevenueBand: revenueBand, wasAdjusted: false, reasoning: '' };
   }
 
-  // Parse employee lower bound from band
-  const employeeMatch = employeeBand.match(/(\d+)/);
+  // Parse employee lower bound from band (handle commas like "1,001-5,000")
+  const cleanedBand = employeeBand.replace(/,/g, '');
+  const employeeMatch = cleanedBand.match(/(\d+)/);
   if (!employeeMatch) {
     return { adjustedRevenueBand: revenueBand, wasAdjusted: false, reasoning: '' };
   }
