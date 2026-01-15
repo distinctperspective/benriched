@@ -1,6 +1,7 @@
 {
   "version": 2,
   "installCommand": "npm install",
+  "buildCommand": "npm run build --workspace=@benriched/types && npm run build --workspace=@benriched/core",
   "functions": {
     "api/enrich.ts": {
       "maxDuration": 60
