@@ -69,7 +69,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(400).json({ error: 'Missing required field: domain' });
     }
 
-    const normalizedDomain = (domain as string).replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+    // Normalize domain: strip protocol, www, trailing slash, and extract root domain
+    let normalizedDomain = (domain as string)
+      .toLowerCase()
+      .replace(/^https?:\/\//, '')  // Remove protocol
+      .replace(/^www\./, '')         // Remove www.
+      .replace(/\/.*$/, '')          // Remove path
+      .trim();
+    
+    // Extract root domain (e.g., "shop.example.com" -> "example.com")
+    const parts = normalizedDomain.split('.');
+    if (parts.length > 2) {
+      // Keep last two parts for most TLDs (example.com)
+      // Handle .co.uk, .com.au style TLDs
+      const knownTwoPartTlds = ['co.uk', 'com.au', 'co.nz', 'co.jp', 'com.br'];
+      const lastTwo = parts.slice(-2).join('.');
+      if (knownTwoPartTlds.includes(lastTwo)) {
+        normalizedDomain = parts.slice(-3).join('.');
+      } else {
+        normalizedDomain = parts.slice(-2).join('.');
+      }
+    }
 
     // Check cache
     if (!force_refresh) {
