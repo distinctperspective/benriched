@@ -6,6 +6,9 @@ export function parseRevenueAmountToUsd(raw: string): number | null {
     .trim()
     .toLowerCase();
 
+  // Handle "less than" indicators - use a lower estimate
+  const isLessThan = /^<|less than|under/.test(cleaned);
+  
   const match = cleaned.match(/([-+]?\d*\.?\d+)/);
   if (!match) return null;
 
@@ -17,7 +20,13 @@ export function parseRevenueAmountToUsd(raw: string): number | null {
   else if (/(million|\bm\b)/.test(cleaned)) multiplier = 1_000_000;
   else if (/(thousand|\bk\b)/.test(cleaned)) multiplier = 1_000;
 
-  const value = base * multiplier;
+  let value = base * multiplier;
+  
+  // If "less than X", use 50% of X as estimate
+  if (isLessThan) {
+    value = value * 0.5;
+  }
+  
   if (!Number.isFinite(value) || value <= 0) return null;
   return value;
 }
