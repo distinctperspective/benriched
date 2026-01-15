@@ -538,9 +538,8 @@ export async function pass2_analyzeContentWithUsage(
     ]);
     
     const targetIcpMatches: TargetICPMatch[] = naicsCodes.filter(naics => targetIcpNaics.has(naics.code));
-    // Target ICP requires: matching NAICS codes AND target region (US, Mexico, or US subsidiary) AND revenue > $10M
-    // Mexico companies pass GEO without needing US operations
-    const targetRegions = new Set(['US', 'MX']);
+    // Target ICP requires: matching NAICS codes AND target region (US, Mexico, Canada, Puerto Rico, or US subsidiary) AND revenue > $10M
+    const targetRegions = new Set(['US', 'MX', 'CA', 'PR']);
     const isTargetRegion = targetRegions.has(parsed.hq_country) || parsed.is_us_hq || parsed.is_us_subsidiary;
     // Revenue bands that PASS (above $10M): 10M-25M, 25M-75M, 75M-200M, 200M-500M, 500M-1B, 1B-10B, 10B-100B, 100B-1T
     const passingRevenueBands = new Set(['10M-25M', '25M-75M', '75M-200M', '200M-500M', '500M-1B', '1B-10B', '10B-100B', '100B-1T']);
@@ -1107,9 +1106,9 @@ export async function enrichDomainWithCost(
   result.revenue_pass = result.company_revenue ? passingRevenueBandsForFinal.has(result.company_revenue) : false;
   
   // Recalculate target_icp with final revenue
-  // Target regions: US, Mexico, or companies with US operations
+  // Target regions: US, Mexico, Canada, Puerto Rico, or companies with US operations
   const hasPassingRevenueFinal = result.company_revenue ? passingRevenueBandsForFinal.has(result.company_revenue) : false;
-  const targetRegionsFinal = new Set(['US', 'MX']);
+  const targetRegionsFinal = new Set(['US', 'MX', 'CA', 'PR']);
   const isTargetRegionFinal = targetRegionsFinal.has(result.hq_country) || result.is_us_hq || result.is_us_subsidiary;
   result.target_icp = (result.target_icp_matches?.length > 0) && isTargetRegionFinal && hasPassingRevenueFinal;
 
