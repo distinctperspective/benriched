@@ -103,6 +103,7 @@ export interface CostBreakdown {
   ai: {
     pass1: AIUsage;
     pass2: AIUsage;
+    deepResearch?: AIUsage;
     total: {
       inputTokens: number;
       outputTokens: number;

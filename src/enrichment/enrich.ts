@@ -3,6 +3,7 @@ import { EnrichmentResult, EnrichmentResultWithCost, Pass1Result, NAICSCode, Tar
 import { scrapeUrl, scrapeMultipleUrls, scrapeMultipleUrlsWithCost, calculateFirecrawlCost } from '../scraper.js';
 import { pickRevenueBandFromEvidence, estimateRevenueBandFromEmployeesAndNaics, estimateFromIndustryAverages, validateRevenueVsEmployees } from '../utils/revenue.js';
 import { parseEmployeeBandLowerBound, countryNameToCode } from '../utils/parsing.js';
+import { detectOutliers, shouldTriggerDeepResearch, runDeepResearch, DeepResearchResult } from './deepResearch.js';
 
 // ============================================================================
 // AI MODEL PRICING (per 1M tokens)
@@ -14,7 +15,7 @@ const AI_PRICING: Record<string, { input: number; output: number }> = {
   'openai/gpt-4o-mini': { input: 0.15, output: 0.60 },
 };
 
-function calculateAICost(model: string, inputTokens: number, outputTokens: number): number {
+export function calculateAICost(model: string, inputTokens: number, outputTokens: number): number {
   const pricing = AI_PRICING[model] || { input: 0.15, output: 0.60 }; // default to gpt-4o-mini
   return (inputTokens * pricing.input / 1_000_000) + (outputTokens * pricing.output / 1_000_000);
 }
@@ -745,6 +746,60 @@ export async function enrichDomainWithCost(
     /\d/.test(employeeAmount); // Must contain at least one digit
   console.log(`   📊 Pass 1 data: revenue=${hasRevenue ? 'YES' : 'NO'}, employees=${hasEmployees ? 'YES' : 'NO'}`);
   
+  // DEEP RESEARCH: Check for outliers and run focused queries if needed
+  let deepResearchResult: DeepResearchResult | null = null;
+  const outlierFlags = detectOutliers(pass1Result);
+  
+  if (shouldTriggerDeepResearch(outlierFlags)) {
+    deepResearchResult = await runDeepResearch(
+      domain,
+      pass1Result.company_name,
+      searchModel,
+      searchModelId,
+      outlierFlags
+    );
+    
+    // Merge deep research results into pass1Result
+    if (deepResearchResult.revenue?.amount) {
+      const existingRevenue = pass1Result.revenue_found || [];
+      pass1Result.revenue_found = [
+        { 
+          amount: deepResearchResult.revenue.amount, 
+          source: `Deep Research: ${deepResearchResult.revenue.source || 'unknown'}`,
+          year: deepResearchResult.revenue.year || '2024',
+          is_estimate: deepResearchResult.revenue.confidence !== 'high'
+        },
+        ...existingRevenue
+      ];
+      console.log(`   💰 Deep research added revenue: ${deepResearchResult.revenue.amount}`);
+    }
+    
+    if (deepResearchResult.employees?.count) {
+      const existingEmployees = pass1Result.employee_count_found;
+      const employeeList = Array.isArray(existingEmployees) ? existingEmployees : (existingEmployees ? [existingEmployees] : []);
+      pass1Result.employee_count_found = [
+        {
+          amount: String(deepResearchResult.employees.count),
+          source: `Deep Research: ${deepResearchResult.employees.source}`,
+        },
+        ...employeeList
+      ] as any;
+      console.log(`   👥 Deep research added employees: ${deepResearchResult.employees.count}`);
+    }
+    
+    if (deepResearchResult.location) {
+      if (!pass1Result.headquarters || pass1Result.headquarters.country === 'unknown') {
+        pass1Result.headquarters = {
+          city: deepResearchResult.location.city || '',
+          state: deepResearchResult.location.state || '',
+          country: deepResearchResult.location.country || '',
+          country_code: deepResearchResult.location.country || ''
+        };
+        console.log(`   📍 Deep research added location: ${deepResearchResult.location.city}, ${deepResearchResult.location.country}`);
+      }
+    }
+  }
+  
   // SMART SCRAPING: Categorize URLs by priority
   const { tier1, tier2, tier3 } = categorizeUrls(pass1Result.urls_to_crawl, domain);
   console.log(`   🔗 URLs by tier: T1=${tier1.length} (essential), T2=${tier2.length} (data), T3=${tier3.length} (other)`);
@@ -1014,17 +1069,19 @@ export async function enrichDomainWithCost(
 
   // Build cost breakdown
   const firecrawlCost = calculateFirecrawlCost(totalFirecrawlCredits);
-  const aiTotalCost = pass1Usage.costUsd + pass2Usage.costUsd;
+  const deepResearchCost = deepResearchResult?.usage?.costUsd || 0;
+  const aiTotalCost = pass1Usage.costUsd + pass2Usage.costUsd + deepResearchCost;
   const totalCost = aiTotalCost + firecrawlCost;
   
   const cost: CostBreakdown = {
     ai: {
       pass1: pass1Usage,
       pass2: pass2Usage,
+      deepResearch: deepResearchResult?.usage || undefined,
       total: {
-        inputTokens: pass1Usage.inputTokens + pass2Usage.inputTokens,
-        outputTokens: pass1Usage.outputTokens + pass2Usage.outputTokens,
-        totalTokens: pass1Usage.totalTokens + pass2Usage.totalTokens,
+        inputTokens: pass1Usage.inputTokens + pass2Usage.inputTokens + (deepResearchResult?.usage?.inputTokens || 0),
+        outputTokens: pass1Usage.outputTokens + pass2Usage.outputTokens + (deepResearchResult?.usage?.outputTokens || 0),
+        totalTokens: pass1Usage.totalTokens + pass2Usage.totalTokens + (deepResearchResult?.usage?.totalTokens || 0),
         costUsd: aiTotalCost
       }
     },
@@ -1052,6 +1109,9 @@ export async function enrichDomainWithCost(
   console.log(`\n✨ Enrichment complete for ${result.company_name}`);
   console.log(`\n💰 Cost breakdown:`);
   console.log(`   AI Pass 1 (${pass1Usage.model}): ${pass1Usage.totalTokens} tokens = $${pass1Usage.costUsd.toFixed(4)}`);
+  if (deepResearchResult?.usage) {
+    console.log(`   AI Deep Research: ${deepResearchResult.usage.totalTokens} tokens = $${deepResearchCost.toFixed(4)} (triggered by: ${deepResearchResult.triggered_by.join(', ')})`);
+  }
   console.log(`   AI Pass 2 (${pass2Usage.model}): ${pass2Usage.totalTokens} tokens = $${pass2Usage.costUsd.toFixed(4)}`);
   console.log(`   Firecrawl: ${totalFirecrawlCredits} credits = $${firecrawlCost.toFixed(4)}`);
   console.log(`   TOTAL: $${totalCost.toFixed(4)}`);
