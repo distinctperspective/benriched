@@ -34,8 +34,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Auth check
   const authHeader = req.headers.authorization;
   const apiKey = process.env.API_KEY || 'amlink21';
+  
+  console.log('Auth header received:', authHeader);
+  console.log('Expected:', `Bearer ${apiKey}`);
+  
   if (!authHeader || authHeader !== `Bearer ${apiKey}`) {
-    return res.status(401).json({ error: 'Unauthorized' });
+    return res.status(401).json({ 
+      error: 'Unauthorized',
+      hint: 'Expected header: Authorization: Bearer <api_key>',
+      received: authHeader || 'none'
+    });
   }
 
   const requestStartTime = Date.now();
