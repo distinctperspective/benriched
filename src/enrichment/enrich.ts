@@ -85,6 +85,13 @@ Step 5: LAST RESORT: Check ZoomInfo, Growjo, Owler - but mark these as LOW confi
 - If ZoomInfo/Growjo shows <$5M but company has 50+ employees or national retail presence, the estimate is likely WRONG
 - ALWAYS search "[company name] Forbes" and "[company name] Inc magazine" for private company revenue
 
+**CRITICAL - AVOID COMPANY NAME CONFUSION:**
+- Many companies have similar names - ALWAYS verify you're researching the correct entity
+- Check that the company's WEBSITE DOMAIN matches the one you're researching
+- If you find a PUBLIC company with similar name, verify it's the SAME company (check website, location, industry)
+- Example: "InnovAsian Cuisine" (private frozen food brand) is DIFFERENT from "Innovative Food Holdings" (public company IVFH)
+- When in doubt, prioritize data that explicitly mentions the company's website domain
+
 - Return revenue_found as an ARRAY of all figures found, not just one
 - Each entry must have: amount (string), source (string), year (string), is_estimate (boolean)
 - Example: [{"amount": "$160M", "source": "Concentric marketing case study", "year": "2023", "is_estimate": false}, {"amount": "$48M", "source": "ZoomInfo", "year": "2023", "is_estimate": true}]
