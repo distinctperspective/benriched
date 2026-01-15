@@ -1,5 +1,5 @@
 import { generateText } from 'ai';
-import { EnrichmentResult, EnrichmentResultWithCost, Pass1Result, NAICSCode, TargetICPMatch, RevenueEvidence, AIUsage, CostBreakdown, PerformanceMetrics } from '../types.js';
+import { EnrichmentResult, EnrichmentResultWithCost, Pass1Result, NAICSCode, TargetICPMatch, RevenueEvidence, AIUsage, CostBreakdown, PerformanceMetrics, DiagnosticInfo } from '../types.js';
 import { scrapeUrl, scrapeMultipleUrls, scrapeMultipleUrlsWithCost, calculateFirecrawlCost } from '../scraper.js';
 import { pickRevenueBandFromEvidence, estimateRevenueBandFromEmployeesAndNaics, estimateFromIndustryAverages, validateRevenueVsEmployees } from '../utils/revenue.js';
 import { parseEmployeeBandLowerBound, countryNameToCode } from '../utils/parsing.js';
@@ -592,6 +592,12 @@ export async function pass2_analyzeContentWithUsage(
     
     // Don't use raw Pass 1 revenue here - let the fallback logic handle it with proper band mapping
     
+    // Build diagnostics from Pass 1 data
+    const diagnostics: DiagnosticInfo = {
+      revenue_sources_found: Array.isArray(pass1Data?.revenue_found) ? pass1Data.revenue_found : [],
+      employee_sources_found: pass1Data?.employee_count_found || null,
+    };
+
     const result: EnrichmentResult = {
       company_name: companyName,
       website: `https://${domain}`,
@@ -615,7 +621,8 @@ export async function pass2_analyzeContentWithUsage(
         industry: { confidence: 'low', reasoning: 'Could not determine industry' }
       },
       target_icp: targetIcp,
-      target_icp_matches: targetIcpMatches
+      target_icp_matches: targetIcpMatches,
+      diagnostics
     };
     
     return { result, usage: aiUsage };
@@ -974,6 +981,16 @@ export async function enrichDomainWithCost(
     if (validation.wasAdjusted) {
       console.log(`   ⚠️  Revenue adjusted: ${result.company_revenue} → ${validation.adjustedRevenueBand}`);
       console.log(`      Reason: ${validation.reasoning}`);
+      
+      // Record adjustment in diagnostics
+      if (result.diagnostics) {
+        result.diagnostics.revenue_adjustment = {
+          original_band: result.company_revenue,
+          adjusted_band: validation.adjustedRevenueBand,
+          reason: validation.reasoning
+        };
+      }
+      
       result.company_revenue = validation.adjustedRevenueBand;
       result.quality.revenue = {
         confidence: 'medium',

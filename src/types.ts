@@ -45,6 +45,16 @@ export interface TargetICPMatch {
   description: string;
 }
 
+export interface DiagnosticInfo {
+  revenue_sources_found: RevenueEvidence[];
+  employee_sources_found: { amount: string; source: string } | null;
+  revenue_adjustment?: {
+    original_band: string | null;
+    adjusted_band: string | null;
+    reason: string;
+  };
+}
+
 export interface EnrichmentResult {
   company_name: string;
   website: string;
@@ -64,6 +74,7 @@ export interface EnrichmentResult {
   quality: QualityMetrics;
   target_icp: boolean;
   target_icp_matches: TargetICPMatch[];
+  diagnostics?: DiagnosticInfo;
 }
 
 export interface LinkedInValidation {
