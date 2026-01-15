@@ -59,18 +59,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const requestStartTime = Date.now();
+  const { domain, hs_company_id, hs_object_id, force_refresh = false, async = false } = body || {};
+  const companyId = hs_company_id || hs_object_id; // Support both field names
+  const requestId = randomUUID();
+
+  // Normalize domain early so it's available in catch block
+  let normalizedDomain = '';
+  
+  if (!domain) {
+    return res.status(400).json({ error: 'Missing required field: domain' });
+  }
 
   try {
-    const { domain, hs_company_id, hs_object_id, force_refresh = false, async = false } = body || {};
-    const companyId = hs_company_id || hs_object_id; // Support both field names
-    const requestId = randomUUID();
-
-    if (!domain) {
-      return res.status(400).json({ error: 'Missing required field: domain' });
-    }
-
     // Normalize domain: strip protocol, www, trailing slash, and extract root domain
-    let normalizedDomain = (domain as string)
+    normalizedDomain = (domain as string)
       .toLowerCase()
       .replace(/^https?:\/\//, '')  // Remove protocol
       .replace(/^www\./, '')         // Remove www.
@@ -194,7 +196,24 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // If async mode, return immediately and process in background
     if (async === true || async === 'true') {
-      waitUntil(doEnrichment().catch(err => console.error('Background enrichment error:', err)));
+      waitUntil(doEnrichment().catch(async (err) => {
+        console.error('Background enrichment error:', err);
+        // Log the error to enrichment_requests
+        const responseTimeMs = Date.now() - requestStartTime;
+        const errorMessage = err instanceof Error ? err.message : 'Unknown error';
+        const errorType = err?.type || (err?.statusCode === 429 ? 'rate_limit' : 'error');
+        await supabase.from('enrichment_requests').insert({
+          hs_company_id: companyId || `api_${requestId}`,
+          domain: normalizedDomain,
+          request_source: companyId ? 'hubspot' : 'api',
+          request_type: 'error',
+          status: errorType,
+          error_message: errorMessage,
+          was_cached: false,
+          cost_usd: 0,
+          response_time_ms: responseTimeMs,
+        });
+      }));
       
       return res.status(202).json({
         success: true,
@@ -215,11 +234,30 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       cached: false,
       hs_company_id: companyId || null
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Enrichment error:', error);
+    
+    // Log the error to enrichment_requests
+    const responseTimeMs = Date.now() - requestStartTime;
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    const err = error as { type?: string; statusCode?: number };
+    const errorType = err?.type || (err?.statusCode === 429 ? 'rate_limit' : 'error');
+    
+    await supabase.from('enrichment_requests').insert({
+      hs_company_id: companyId || `api_${requestId}`,
+      domain: normalizedDomain,
+      request_source: companyId ? 'hubspot' : 'api',
+      request_type: 'error',
+      status: errorType,
+      error_message: errorMessage,
+      was_cached: false,
+      cost_usd: 0,
+      response_time_ms: responseTimeMs,
+    });
+    
     return res.status(500).json({
       success: false,
-      error: error instanceof Error ? error.message : 'Unknown error occurred'
+      error: errorMessage
     });
   }
 }
