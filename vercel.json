@@ -1,15 +1,9 @@
 {
   "version": 2,
-  "buildCommand": "npm run build --workspace=@benriched/types && npm run build --workspace=@benriched/core",
   "installCommand": "npm install",
-  "framework": null,
   "functions": {
-    "packages/api/src/index.ts": {
-      "runtime": "@vercel/node@3.0.0",
+    "api/enrich.ts": {
       "maxDuration": 60
     }
-  },
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/packages/api/src/index.ts" }
-  ]
+  }
 }
