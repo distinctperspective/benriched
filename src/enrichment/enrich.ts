@@ -569,8 +569,28 @@ export async function pass2_analyzeContentWithUsage(
     }
     
     let finalSize = parsed.company_size || 'unknown';
-    if (finalSize === 'unknown' && pass1Data?.employee_count_found?.amount) {
-      finalSize = pass1Data.employee_count_found.amount;
+    // Prefer Pass 1 employee data if available and Pass 2 returned unknown or a very small band
+    const pass1Employee = pass1Data?.employee_count_found;
+    if (pass1Employee?.amount) {
+      // If Pass 2 is unknown or seems wrong (e.g., 11-50 when Pass 1 found 1000+), use Pass 1
+      const pass2IsSmall = finalSize === 'unknown' || finalSize === '0-1 Employees' || finalSize === '2-10 Employees' || finalSize === '11-50 Employees';
+      const pass1Amount = String(pass1Employee.amount).toLowerCase();
+      const pass1HasLargeCount = /\d{3,}/.test(pass1Amount) || /thousand|1,?\d{3}|over\s*\d{3}/.test(pass1Amount);
+      if (pass2IsSmall && pass1HasLargeCount) {
+        // Parse Pass 1 employee count to a band
+        const numMatch = pass1Amount.match(/(\d[\d,]*)/);
+        if (numMatch) {
+          const count = parseInt(numMatch[1].replace(/,/g, ''), 10);
+          if (count > 10000) finalSize = '10,001+ Employees';
+          else if (count > 5000) finalSize = '5,001-10,000 Employees';
+          else if (count > 1000) finalSize = '1,001-5,000 Employees';
+          else if (count > 500) finalSize = '501-1,000 Employees';
+          else if (count > 200) finalSize = '201-500 Employees';
+          else if (count > 50) finalSize = '51-200 Employees';
+        }
+      } else if (finalSize === 'unknown') {
+        finalSize = pass1Employee.amount;
+      }
     }
     
     // Don't use raw Pass 1 revenue here - let the fallback logic handle it with proper band mapping
