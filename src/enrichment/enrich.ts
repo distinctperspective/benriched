@@ -308,6 +308,9 @@ export async function pass1_identifyUrlsWithUsage(domain: string, model: any, mo
     model,
     prompt: `What is the annual revenue and employee count for the company at ${domain}?
 
+IMPORTANT: Find data for the SPECIFIC company at this domain, NOT its parent company.
+If this is a subsidiary (e.g., "Company Name North America"), find THAT subsidiary's revenue and employees, not the global parent's figures.
+
 Search their website, Forbes, press releases, and news articles for revenue figures.
 Check LinkedIn and company website for employee count.
 For PUBLIC companies, check SEC 10-K filings.
@@ -315,14 +318,14 @@ Mark ZoomInfo/Growjo/Owler figures as estimates - they're often inaccurate.
 
 After finding the data, format as JSON:
 {
-  "company_name": "Company Name",
-  "parent_company": "Parent company if subsidiary, otherwise null",
+  "company_name": "Full Company Name (e.g., Ajinomoto Foods North America, not just Ajinomoto)",
+  "parent_company": "Parent company name if this is a subsidiary, otherwise null",
   "headquarters": {"city": "City", "state": "State", "country": "Country", "country_code": "US"},
   "urls_to_crawl": ["https://company.com", "https://linkedin.com/company/..."],
   "revenue_found": [
-    {"amount": "$1.4 billion", "source": "company website", "year": "2024", "is_estimate": false}
+    {"amount": "$500 million", "source": "company website", "year": "2024", "is_estimate": false}
   ],
-  "employee_count_found": {"amount": "4,000", "source": "LinkedIn"}
+  "employee_count_found": {"amount": "2,500", "source": "LinkedIn"}
 }
 
 Return ALL revenue figures found with sources. Return ONLY valid JSON.`,
