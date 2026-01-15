@@ -23,20 +23,32 @@ export function pickRevenueBandFromEvidence(
   const values = parsed.map((p) => p.usd as number);
   const min = Math.min(...values);
   const max = Math.max(...values);
+  
+  // If sources conflict significantly, use the HIGHEST figure
+  // Business directories (ZoomInfo, etc.) tend to underestimate private company revenue
   if (min > 0 && max / min > 5) {
-    return {
-      band: null,
-      confidence: 'low',
-      reasoning: 'Revenue sources conflict by more than 5×; leaving revenue as null',
-    };
+    const highest = parsed.reduce((a, b) => ((a.usd as number) > (b.usd as number) ? a : b));
+    const band = highest.usd ? mapUsdToRevenueBand(highest.usd) : null;
+    if (band) {
+      return {
+        band,
+        confidence: 'medium',
+        reasoning: `Revenue sources conflict (${min.toLocaleString()} to ${max.toLocaleString()}). Using highest figure: ${highest.amount} (${highest.source}) → ${band}`,
+      };
+    }
   }
 
+  // Prioritize: 1) Non-estimates over estimates, 2) Higher figures, 3) More recent
   const sorted = [...parsed].sort((a, b) => {
+    // Non-estimates first
+    if (a.is_estimate !== b.is_estimate) return a.is_estimate ? 1 : -1;
+    // Higher figures preferred (business directories underestimate)
+    const usdDiff = (b.usd as number) - (a.usd as number);
+    if (Math.abs(usdDiff) > 1_000_000) return usdDiff > 0 ? 1 : -1;
+    // More recent preferred
     const ay = a.yearNum ?? -1;
     const by = b.yearNum ?? -1;
-    if (ay !== by) return by - ay;
-    if (a.is_estimate !== b.is_estimate) return a.is_estimate ? 1 : -1;
-    return (b.usd as number) - (a.usd as number);
+    return by - ay;
   });
 
   const best = sorted[0];
@@ -47,7 +59,7 @@ export function pickRevenueBandFromEvidence(
 
   const sourceLower = (best.source || '').toLowerCase();
   const confidence: 'high' | 'medium' | 'low' =
-    /(sec|10-k|annual report|earnings|results)/.test(sourceLower)
+    /(sec|10-k|annual report|earnings|results|press release|news)/.test(sourceLower)
       ? 'high'
       : best.is_estimate
         ? 'medium'
