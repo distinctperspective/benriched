@@ -570,26 +570,36 @@ export async function pass2_analyzeContentWithUsage(
     
     let finalSize = parsed.company_size || 'unknown';
     // Prefer Pass 1 employee data if available and Pass 2 returned unknown or a very small band
-    const pass1Employee = pass1Data?.employee_count_found;
-    if (pass1Employee?.amount) {
-      // If Pass 2 is unknown or seems wrong (e.g., 11-50 when Pass 1 found 1000+), use Pass 1
-      const pass2IsSmall = finalSize === 'unknown' || finalSize === '0-1 Employees' || finalSize === '2-10 Employees' || finalSize === '11-50 Employees';
-      const pass1Amount = String(pass1Employee.amount).toLowerCase();
-      const pass1HasLargeCount = /\d{3,}/.test(pass1Amount) || /thousand|1,?\d{3}|over\s*\d{3}/.test(pass1Amount);
-      if (pass2IsSmall && pass1HasLargeCount) {
-        // Parse Pass 1 employee count to a band
-        const numMatch = pass1Amount.match(/(\d[\d,]*)/);
+    const pass1EmployeeData = pass1Data?.employee_count_found;
+    // Handle both array and single object formats
+    const pass1EmployeeList = Array.isArray(pass1EmployeeData) ? pass1EmployeeData : (pass1EmployeeData ? [pass1EmployeeData] : []);
+    
+    if (pass1EmployeeList.length > 0) {
+      // Find the highest employee count from Pass 1 sources
+      let maxCount = 0;
+      for (const emp of pass1EmployeeList) {
+        const amountStr = String(emp.amount || '').toLowerCase().replace(/,/g, '');
+        const numMatch = amountStr.match(/(\d+)/);
         if (numMatch) {
-          const count = parseInt(numMatch[1].replace(/,/g, ''), 10);
-          if (count > 10000) finalSize = '10,001+ Employees';
-          else if (count > 5000) finalSize = '5,001-10,000 Employees';
-          else if (count > 1000) finalSize = '1,001-5,000 Employees';
-          else if (count > 500) finalSize = '501-1,000 Employees';
-          else if (count > 200) finalSize = '201-500 Employees';
-          else if (count > 50) finalSize = '51-200 Employees';
+          const count = parseInt(numMatch[1], 10);
+          // Handle "1K" format
+          if (amountStr.includes('k') && count < 100) {
+            maxCount = Math.max(maxCount, count * 1000);
+          } else {
+            maxCount = Math.max(maxCount, count);
+          }
         }
-      } else if (finalSize === 'unknown') {
-        finalSize = pass1Employee.amount;
+      }
+      
+      // If Pass 2 returned a small band but Pass 1 found a larger count, use Pass 1
+      const pass2IsSmall = finalSize === 'unknown' || finalSize === '0-1 Employees' || finalSize === '2-10 Employees' || finalSize === '11-50 Employees';
+      if (pass2IsSmall && maxCount > 100) {
+        if (maxCount > 10000) finalSize = '10,001+ Employees';
+        else if (maxCount > 5000) finalSize = '5,001-10,000 Employees';
+        else if (maxCount > 1000) finalSize = '1,001-5,000 Employees';
+        else if (maxCount > 500) finalSize = '501-1,000 Employees';
+        else if (maxCount > 200) finalSize = '201-500 Employees';
+        else if (maxCount > 50) finalSize = '51-200 Employees';
       }
     }
     
