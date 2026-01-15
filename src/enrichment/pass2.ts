@@ -164,7 +164,9 @@ export async function pass2_analyzeContent(
     ]);
 
     const targetIcpMatches: TargetICPMatch[] = naicsCodes.filter(naics => targetIcpNaics.has(naics.code));
-    const targetIcp = targetIcpMatches.length > 0;
+    // Target ICP requires: matching NAICS codes AND US presence (HQ or subsidiary)
+    const isUsPresence = parsed.is_us_hq || parsed.is_us_subsidiary;
+    const targetIcp = targetIcpMatches.length > 0 && isUsPresence;
 
     let finalRevenue = parsed.company_revenue || null;
     if (finalRevenue && parsed.quality?.revenue?.reasoning) {

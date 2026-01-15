@@ -531,7 +531,9 @@ export async function pass2_analyzeContentWithUsage(
     ]);
     
     const targetIcpMatches: TargetICPMatch[] = naicsCodes.filter(naics => targetIcpNaics.has(naics.code));
-    const targetIcp = targetIcpMatches.length > 0;
+    // Target ICP requires: matching NAICS codes AND US presence (HQ or subsidiary)
+    const isUsPresence = parsed.is_us_hq || parsed.is_us_subsidiary;
+    const targetIcp = targetIcpMatches.length > 0 && isUsPresence;
     
     // Valid revenue bands - reject any AI hallucinated bands
     const VALID_REVENUE_BANDS = new Set([
