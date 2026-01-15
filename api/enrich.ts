@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { gateway } from '@ai-sdk/gateway';
 import { createClient } from '@supabase/supabase-js';
-import { enrichDomainWithCost } from '../packages/core/src/enrichment/enrich.js';
+import { enrichDomainWithCost } from '@benriched/core';
 
 const SEARCH_MODEL_ID = 'perplexity/sonar-pro';
 const ANALYSIS_MODEL_ID = 'openai/gpt-4o-mini';
