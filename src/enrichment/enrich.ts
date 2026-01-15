@@ -306,17 +306,26 @@ export async function pass1_identifyUrlsWithUsage(domain: string, model: any, mo
   
   const { text, usage } = await generateText({
     model,
-    system: PASS1_PROMPT,
-    prompt: `Research the company at domain: ${domain}
+    prompt: `What is the annual revenue and employee count for the company at ${domain}?
 
-REQUIRED STEPS:
-1. First, identify the company name from the domain
-2. Search for "[company name] revenue" to find revenue figures
-3. Search for "[company name] employees" to find employee count
-4. Check ZoomInfo, Growjo, Owler for revenue/employee estimates
-5. Return the URLs to crawl AND any revenue/employee data you found
+Search their website, Forbes, press releases, and news articles for revenue figures.
+Check LinkedIn and company website for employee count.
+For PUBLIC companies, check SEC 10-K filings.
+Mark ZoomInfo/Growjo/Owler figures as estimates - they're often inaccurate.
 
-Return the JSON with company info, URLs, and any revenue/employee data found.`,
+After finding the data, format as JSON:
+{
+  "company_name": "Company Name",
+  "parent_company": "Parent company if subsidiary, otherwise null",
+  "headquarters": {"city": "City", "state": "State", "country": "Country", "country_code": "US"},
+  "urls_to_crawl": ["https://company.com", "https://linkedin.com/company/..."],
+  "revenue_found": [
+    {"amount": "$1.4 billion", "source": "company website", "year": "2024", "is_estimate": false}
+  ],
+  "employee_count_found": {"amount": "4,000", "source": "LinkedIn"}
+}
+
+Return ALL revenue figures found with sources. Return ONLY valid JSON.`,
     temperature: 0.1,
   });
   
