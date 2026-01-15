@@ -65,16 +65,22 @@ Guidelines:
   - If unsure, do NOT include a LinkedIn URL - it's better to return no URL than a wrong one
 
 **CRITICAL - YOU MUST SEARCH FOR REVENUE (Multiple Sources Required):**
-Step 1: Search web for "[company name] revenue" AND "[company name] annual sales"
-Step 2: Check ZoomInfo, Growjo, Owler, Dun & Bradstreet, IBISWorld for revenue estimates
-Step 3: Look for press releases, investor reports, or news articles with revenue figures
+Step 1: Search "[company name] revenue" AND "[company name] annual sales" AND "[company name] million sales"
+Step 2: Look for press releases, news articles, trade publications, and industry reports FIRST
+Step 3: Search for marketing case studies or awards that mention revenue (e.g., "Inc 5000", "fastest growing")
 Step 4: If SUBSIDIARY, search "[parent company] [subsidiary name] segment revenue" and "[parent company] annual report"
-Step 5: Record ALL revenue figures you find (not just one), with source and year
+Step 5: LAST RESORT: Check ZoomInfo, Growjo, Owler - but mark these as LOW confidence estimates
+
+**IMPORTANT - SOURCE RELIABILITY:**
+- MOST RELIABLE: SEC filings, press releases, news articles, trade publications, company announcements
+- MODERATELY RELIABLE: Industry reports, marketing case studies, awards lists
+- LEAST RELIABLE: ZoomInfo, Growjo, Owler, Dun & Bradstreet, Manta (often outdated/wrong for private companies)
+- If ZoomInfo/Growjo shows <$5M but company has 50+ employees or national retail presence, the estimate is likely WRONG
 
 - Return revenue_found as an ARRAY of all figures found, not just one
 - Each entry must have: amount (string), source (string), year (string), is_estimate (boolean)
-- Example: [{"amount": "$42M", "source": "ZoomInfo", "year": "2023", "is_estimate": true}, {"amount": "$38M", "source": "Press release", "year": "2022", "is_estimate": false}]
-- For private companies, third-party estimates are acceptable - mark is_estimate: true
+- Example: [{"amount": "$160M", "source": "Concentric marketing case study", "year": "2023", "is_estimate": false}, {"amount": "$48M", "source": "ZoomInfo", "year": "2023", "is_estimate": true}]
+- Mark ZoomInfo/Growjo/Owler figures as is_estimate: true ALWAYS
 **CRITICAL - YOU MUST SEARCH FOR EMPLOYEE COUNT:**
 Step 1: Search "[company name] LinkedIn" and visit the LinkedIn company page
 Step 2: Look for "Company size" on LinkedIn (e.g., "2-10 employees", "51-200 employees")
