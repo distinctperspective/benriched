@@ -31,18 +31,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  // Auth check
+  // Auth check - supports multiple methods
   const authHeader = req.headers.authorization;
+  const xApiKey = req.headers['x-api-key'] as string;
+  const queryApiKey = req.query?.api_key as string;
   const apiKey = process.env.API_KEY || 'amlink21';
   
-  console.log('Auth header received:', authHeader);
-  console.log('Expected:', `Bearer ${apiKey}`);
+  const isAuthorized = 
+    authHeader === `Bearer ${apiKey}` ||
+    xApiKey === apiKey ||
+    queryApiKey === apiKey;
   
-  if (!authHeader || authHeader !== `Bearer ${apiKey}`) {
+  if (!isAuthorized) {
     return res.status(401).json({ 
       error: 'Unauthorized',
-      hint: 'Expected header: Authorization: Bearer <api_key>',
-      received: authHeader || 'none'
+      hint: 'Use one of: Authorization: Bearer <key>, X-API-Key: <key>, or ?api_key=<key>',
     });
   }
 
