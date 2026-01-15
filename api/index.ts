@@ -22,20 +22,23 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Health check
-  if (req.method === 'GET' && (req.url === '/' || req.url === '/health')) {
+  if (req.method === 'GET' && (req.url === '/' || req.url === '/health' || req.url?.startsWith('/?'))) {
     return res.status(200).json({ status: 'ok', name: 'Benriched API', version: '0.1.0' });
   }
 
-  // Only POST for /enrich
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+  // Accept both GET and POST for flexibility with HubSpot
+  if (req.method !== 'POST' && req.method !== 'GET') {
+    return res.status(405).json({ error: 'Method not allowed', received: req.method });
   }
+
+  // Get body from POST or query params from GET
+  const body = req.method === 'POST' ? req.body : req.query;
 
   // Auth check - supports multiple methods
   const authHeader = req.headers.authorization;
   const xApiKey = req.headers['x-api-key'] as string;
   const queryApiKey = req.query?.api_key as string;
-  const bodyApiKey = req.body?.api_key as string;
+  const bodyApiKey = body?.api_key as string;
   const apiKey = process.env.API_KEY || 'amlink21';
   
   const isAuthorized = 
@@ -54,7 +57,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const requestStartTime = Date.now();
 
   try {
-    const { domain, hs_company_id, force_refresh = false } = req.body || {};
+    const { domain, hs_company_id, hs_object_id, force_refresh = false } = body || {};
+    const companyId = hs_company_id || hs_object_id; // Support both field names
 
     if (!domain) {
       return res.status(400).json({ error: 'Missing required field: domain' });
@@ -71,10 +75,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .single();
 
       if (existingCompany) {
-        if (hs_company_id) {
+        if (companyId) {
           const responseTimeMs = Date.now() - requestStartTime;
           await supabase.from('enrichment_requests').upsert({
-            hs_company_id,
+            hs_company_id: companyId,
             domain: normalizedDomain,
             company_id: existingCompany.id,
             request_source: 'hubspot',
@@ -88,7 +92,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           success: true,
           data: existingCompany,
           cached: true,
-          hs_company_id: hs_company_id || null
+          hs_company_id: companyId || null
         });
       }
     }
@@ -133,10 +137,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .select()
       .single();
 
-    if (hs_company_id && savedCompany) {
+    if (companyId && savedCompany) {
       const responseTimeMs = Date.now() - requestStartTime;
       await supabase.from('enrichment_requests').upsert({
-        hs_company_id,
+        hs_company_id: companyId,
         domain: normalizedDomain,
         company_id: savedCompany.id,
         request_source: 'hubspot',
@@ -150,7 +154,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       success: true,
       data: result,
       cached: false,
-      hs_company_id: hs_company_id || null
+      hs_company_id: companyId || null
     });
   } catch (error) {
     console.error('Enrichment error:', error);
