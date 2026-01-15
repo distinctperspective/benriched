@@ -1,7 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { waitUntil } from '@vercel/functions';
 import { gateway } from '@ai-sdk/gateway';
 import { createClient } from '@supabase/supabase-js';
 import { enrichDomainWithCost } from '../src/enrichment/enrich.js';
+import { randomUUID } from 'crypto';
 
 const SEARCH_MODEL_ID = 'perplexity/sonar-pro';
 const ANALYSIS_MODEL_ID = 'openai/gpt-4o-mini';
@@ -59,14 +61,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const requestStartTime = Date.now();
 
   try {
-    const { domain, hs_company_id, hs_object_id, force_refresh = false } = body || {};
+    const { domain, hs_company_id, hs_object_id, force_refresh = false, async = false } = body || {};
     const companyId = hs_company_id || hs_object_id; // Support both field names
+    const requestId = randomUUID();
 
     if (!domain) {
       return res.status(400).json({ error: 'Missing required field: domain' });
     }
 
-    const normalizedDomain = domain.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
+    const normalizedDomain = (domain as string).replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '');
 
     // Check cache
     if (!force_refresh) {
@@ -99,58 +102,80 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       }
     }
 
-    const searchModel = gateway(SEARCH_MODEL_ID);
-    const analysisModel = gateway(ANALYSIS_MODEL_ID);
+    // Async enrichment function
+    const doEnrichment = async () => {
+      const searchModel = gateway(SEARCH_MODEL_ID);
+      const analysisModel = gateway(ANALYSIS_MODEL_ID);
 
-    const result = await enrichDomainWithCost(
-      normalizedDomain,
-      searchModel,
-      analysisModel,
-      process.env.FIRECRAWL_API_KEY,
-      SEARCH_MODEL_ID,
-      ANALYSIS_MODEL_ID
-    );
+      const result = await enrichDomainWithCost(
+        normalizedDomain,
+        searchModel,
+        analysisModel,
+        process.env.FIRECRAWL_API_KEY,
+        SEARCH_MODEL_ID,
+        ANALYSIS_MODEL_ID
+      );
 
-    // Save company
-    const { data: savedCompany } = await supabase
-      .from('companies')
-      .upsert({
+      // Save company
+      const { data: savedCompany } = await supabase
+        .from('companies')
+        .upsert({
+          domain: normalizedDomain,
+          company_name: result.company_name,
+          website: result.website,
+          linkedin_url: result.linkedin_url,
+          business_description: result.business_description,
+          company_size: result.company_size,
+          company_revenue: result.company_revenue,
+          city: result.city,
+          state: result.state,
+          hq_country: result.hq_country,
+          is_us_hq: result.is_us_hq,
+          is_us_subsidiary: result.is_us_subsidiary,
+          naics_codes_6_digit: result.naics_codes_6_digit || [],
+          naics_codes_csv: result.naics_codes_csv,
+          target_icp: result.target_icp,
+          target_icp_matches: result.target_icp_matches || [],
+          source_urls: result.source_urls || [],
+          quality: result.quality,
+          enrichment_cost: result.cost,
+          performance_metrics: result.performance,
+        }, { onConflict: 'domain' })
+        .select()
+        .single();
+
+      if (companyId && savedCompany) {
+        const responseTimeMs = Date.now() - requestStartTime;
+        await supabase.from('enrichment_requests').upsert({
+          hs_company_id: companyId,
+          domain: normalizedDomain,
+          company_id: savedCompany.id,
+          request_source: 'hubspot',
+          was_cached: false,
+          cost_usd: result.cost.total.costUsd,
+          response_time_ms: responseTimeMs,
+        }, { onConflict: 'hs_company_id' });
+      }
+
+      return result;
+    };
+
+    // If async mode, return immediately and process in background
+    if (async === true || async === 'true') {
+      waitUntil(doEnrichment().catch(err => console.error('Background enrichment error:', err)));
+      
+      return res.status(202).json({
+        success: true,
+        status: 'processing',
+        request_id: requestId,
         domain: normalizedDomain,
-        company_name: result.company_name,
-        website: result.website,
-        linkedin_url: result.linkedin_url,
-        business_description: result.business_description,
-        company_size: result.company_size,
-        company_revenue: result.company_revenue,
-        city: result.city,
-        state: result.state,
-        hq_country: result.hq_country,
-        is_us_hq: result.is_us_hq,
-        is_us_subsidiary: result.is_us_subsidiary,
-        naics_codes_6_digit: result.naics_codes_6_digit || [],
-        naics_codes_csv: result.naics_codes_csv,
-        target_icp: result.target_icp,
-        target_icp_matches: result.target_icp_matches || [],
-        source_urls: result.source_urls || [],
-        quality: result.quality,
-        enrichment_cost: result.cost,
-        performance_metrics: result.performance,
-      }, { onConflict: 'domain' })
-      .select()
-      .single();
-
-    if (companyId && savedCompany) {
-      const responseTimeMs = Date.now() - requestStartTime;
-      await supabase.from('enrichment_requests').upsert({
-        hs_company_id: companyId,
-        domain: normalizedDomain,
-        company_id: savedCompany.id,
-        request_source: 'hubspot',
-        was_cached: false,
-        cost_usd: result.cost.total.costUsd,
-        response_time_ms: responseTimeMs,
-      }, { onConflict: 'hs_company_id' });
+        hs_company_id: companyId || null,
+        message: 'Enrichment started. Data will be saved to database when complete.'
+      });
     }
+
+    // Sync mode - wait for result
+    const result = await doEnrichment();
 
     return res.status(200).json({
       success: true,

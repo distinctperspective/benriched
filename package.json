@@ -20,6 +20,7 @@
     "@ai-sdk/openai": "^3.0.9",
     "@hono/node-server": "^1.8.2",
     "@supabase/supabase-js": "^2.39.3",
+    "@vercel/functions": "^3.3.6",
     "ai": "^6.0.23",
     "dotenv": "^16.3.1",
     "hono": "^4.0.0"
