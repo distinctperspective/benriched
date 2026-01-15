@@ -66,16 +66,24 @@ Guidelines:
 
 **CRITICAL - YOU MUST SEARCH FOR REVENUE (Multiple Sources Required):**
 Step 1: Search "[company name] revenue" AND "[company name] annual sales" AND "[company name] million sales"
-Step 2: Look for press releases, news articles, trade publications, and industry reports FIRST
-Step 3: Search for marketing case studies or awards that mention revenue (e.g., "Inc 5000", "fastest growing")
+Step 2: Check these HIGH-PRIORITY sources for revenue data:
+  - Forbes, Inc Magazine, Business Insider, Bloomberg, Reuters
+  - Industry trade publications (e.g., Food Business News, Supermarket News, Progressive Grocer)
+  - Press releases on PR Newswire, Business Wire, GlobeNewswire
+  - Inc 5000, Deloitte Fast 500, or other growth lists
+  - Crunchbase funding rounds (can indicate revenue scale)
+  - PitchBook, PrivCo if available
+  - Company "About" or "Our Story" pages mentioning growth milestones
+Step 3: Search for marketing case studies or awards that mention revenue
 Step 4: If SUBSIDIARY, search "[parent company] [subsidiary name] segment revenue" and "[parent company] annual report"
 Step 5: LAST RESORT: Check ZoomInfo, Growjo, Owler - but mark these as LOW confidence estimates
 
 **IMPORTANT - SOURCE RELIABILITY:**
-- MOST RELIABLE: SEC filings, press releases, news articles, trade publications, company announcements
-- MODERATELY RELIABLE: Industry reports, marketing case studies, awards lists
+- MOST RELIABLE: SEC filings, press releases, Forbes/Inc/Bloomberg articles, trade publications
+- MODERATELY RELIABLE: Crunchbase, industry reports, marketing case studies, awards lists
 - LEAST RELIABLE: ZoomInfo, Growjo, Owler, Dun & Bradstreet, Manta (often outdated/wrong for private companies)
 - If ZoomInfo/Growjo shows <$5M but company has 50+ employees or national retail presence, the estimate is likely WRONG
+- ALWAYS search "[company name] Forbes" and "[company name] Inc magazine" for private company revenue
 
 - Return revenue_found as an ARRAY of all figures found, not just one
 - Each entry must have: amount (string), source (string), year (string), is_estimate (boolean)
