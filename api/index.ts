@@ -107,6 +107,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           domain: normalizedDomain,
           company_id: existingCompany.id,
           request_source: companyId ? 'hubspot' : 'api',
+          request_type: 'cache_hit',
           was_cached: true,
           cost_usd: 0,
           response_time_ms: responseTimeMs,
@@ -164,6 +165,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .single();
 
       // Log the request (always, even without hs_company_id)
+      // Determine request type based on whether this was a force_refresh or new enrichment
+      const requestType = force_refresh ? 'force_refresh' : 'new_enrichment';
+      
       if (savedCompany) {
         const responseTimeMs = Date.now() - requestStartTime;
         await supabase.from('enrichment_requests').insert({
@@ -171,6 +175,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           domain: normalizedDomain,
           company_id: savedCompany.id,
           request_source: companyId ? 'hubspot' : 'api',
+          request_type: requestType,
           was_cached: false,
           cost_usd: result.cost.total.costUsd,
           response_time_ms: responseTimeMs,
