@@ -23,97 +23,44 @@ function calculateAICost(model: string, inputTokens: number, outputTokens: numbe
 // PASS 1 PROMPT - EXACT COPY FROM TEST SCRIPT
 // ============================================================================
 
-const PASS1_PROMPT = `You are a research assistant. Given a company domain, identify the best URLs to scrape AND extract key financial data you find during your search.
+const PASS1_PROMPT = `Research the company at this domain. Answer these questions:
 
-Return a JSON object:
+1. What is the company's annual revenue? Search their website, Forbes, press releases, SEC filings.
+2. How many employees do they have? Check LinkedIn, company website.
+3. Where is their headquarters located?
+4. What URLs should we scrape for more detailed information?
+
+For PUBLIC companies (NYSE, NASDAQ), check SEC 10-K filings first.
+For SUBSIDIARIES, find the subsidiary's revenue, not the parent company's total.
+Mark ZoomInfo/Growjo/Owler figures as estimates - they're often wrong for private companies.
+
+After finding this information, format your response as JSON:
 {
-  "company_name": "Best guess at company name",
-  "parent_company": "Parent company name if this is a subsidiary, otherwise null",
+  "company_name": "Company Name",
+  "parent_company": "Parent company if subsidiary, otherwise null",
   "headquarters": {
-    "city": "San Francisco",
-    "state": "California",
-    "country": "United States",
+    "city": "City",
+    "state": "State or null",
+    "country": "Country",
     "country_code": "US"
   },
   "urls_to_crawl": [
-    "https://example.com",
-    "https://example.com/about",
-    "https://www.linkedin.com/company/example",
-    "https://www.zoominfo.com/c/example/123456",
-    "https://www.crunchbase.com/organization/example",
-    "https://en.wikipedia.org/wiki/Example_Company"
+    "https://company.com",
+    "https://company.com/about",
+    "https://linkedin.com/company/...",
+    "https://glassdoor.com/...",
+    "https://zoominfo.com/..."
   ],
-  "revenue_found": {
-    "amount": "$4.2 billion",
-    "source": "Colgate-Palmolive 2023 Annual Report",
-    "year": "2023"
-  },
-  "employee_count_found": {
-    "amount": "2,300",
-    "source": "Wikipedia"
-  }
+  "revenue_found": [
+    {"amount": "$12.5 billion", "source": "company website", "year": "2024", "is_estimate": false},
+    {"amount": "$11 billion", "source": "ZoomInfo", "year": "2024", "is_estimate": true}
+  ],
+  "employee_count_found": {"amount": "53,000", "source": "LinkedIn"}
 }
 
-Guidelines:
-- Include the main company website, LinkedIn, ZoomInfo, Crunchbase, Wikipedia
-- **ALSO include Glassdoor and Indeed** - these have valuable employee count, salary data, and company reviews
-- Include LinkedIn company page URL if you can find it
-- **CRITICAL for LinkedIn:** 
-  - Company names with apostrophes (like "Chef's Plate") often have apostrophes in the LinkedIn URL slug (e.g., linkedin.com/company/chef's-plate NOT linkedin.com/company/chefs-plate)
-  - ALWAYS verify the LinkedIn URL by visiting it or searching "[company name] LinkedIn" 
-  - Check that the LinkedIn page shows the SAME website domain, location, and industry as the company you're researching
-  - If unsure, do NOT include a LinkedIn URL - it's better to return no URL than a wrong one
-
-**CRITICAL - YOU MUST SEARCH FOR REVENUE (Multiple Sources Required):**
-Step 1: Search "[company name] revenue" AND "[company name] annual sales" AND "[company name] million sales"
-Step 2: **For PUBLIC companies (NYSE, NASDAQ, etc.)** - ALWAYS check SEC 10-K filings FIRST - these are the most accurate source
-Step 3: Search "[company name] press release revenue" - companies often announce revenue milestones
-Step 4: Check these HIGH-PRIORITY sources for revenue data:
-  - Forbes, Inc Magazine, Business Insider, Bloomberg, Reuters
-  - Industry trade publications: Food Business News, Supermarket News, Meat+Poultry magazine, Progressive Grocer
-  - Press releases on PR Newswire, Business Wire, GlobeNewswire
-  - Inc 5000, Deloitte Fast 500, or other growth lists
-  - Crunchbase funding rounds (can indicate revenue scale)
-  - PitchBook, PrivCo if available
-  - Company "About" or "Our Story" pages mentioning growth milestones
-Step 5: If SUBSIDIARY, clearly distinguish parent vs subsidiary revenue:
-  - Search "[subsidiary name] revenue" separately from parent company
-  - Do NOT use parent company's total revenue for the subsidiary
-  - Look for segment reports in parent's annual filings
-Step 6: LAST RESORT: Check ZoomInfo, Growjo, Owler - but mark these as LOW confidence estimates
-
-**IMPORTANT - SOURCE RELIABILITY:**
-- MOST RELIABLE: SEC filings, press releases, Forbes/Inc/Bloomberg articles, trade publications
-- MODERATELY RELIABLE: Crunchbase, industry reports, marketing case studies, awards lists
-- LEAST RELIABLE: ZoomInfo, Growjo, Owler, Dun & Bradstreet, Manta (often outdated/wrong for private companies)
-
-**SANITY CHECKS - Flag these as likely WRONG:**
-- If ZoomInfo/Growjo shows <$5M but company has 50+ employees, the estimate is likely WRONG
-- If ZoomInfo shows <$100M but company has 10,000+ employees, the estimate is DEFINITELY WRONG
-- If company has national retail presence or multiple manufacturing facilities, revenue is likely $50M+
-- ALWAYS search "[company name] Forbes" and "[company name] Inc magazine" for private company revenue
-
-**CRITICAL - AVOID COMPANY NAME CONFUSION:**
-- Many companies have similar names - ALWAYS verify you're researching the correct entity
-- Check that the company's WEBSITE DOMAIN matches the one you're researching
-- If you find a PUBLIC company with similar name, verify it's the SAME company (check website, location, industry)
-- Example: "InnovAsian Cuisine" (private frozen food brand) is DIFFERENT from "Innovative Food Holdings" (public company IVFH)
-- When in doubt, prioritize data that explicitly mentions the company's website domain
-
-- Return revenue_found as an ARRAY of all figures found, not just one
-- Each entry must have: amount (string), source (string), year (string), is_estimate (boolean)
-- Example: [{"amount": "$160M", "source": "Concentric marketing case study", "year": "2023", "is_estimate": false}, {"amount": "$48M", "source": "ZoomInfo", "year": "2023", "is_estimate": true}]
-- Mark ZoomInfo/Growjo/Owler figures as is_estimate: true ALWAYS
-**CRITICAL - YOU MUST SEARCH FOR EMPLOYEE COUNT:**
-Step 1: Search "[company name] LinkedIn" and visit the LinkedIn company page
-Step 2: Look for "Company size" on LinkedIn (e.g., "2-10 employees", "51-200 employees")
-Step 3: Also check ZoomInfo, Growjo, Owler for employee counts
-Step 4: Record the employee count with source in "employee_count_found"
-
-- If you find employee count, include it in "employee_count_found" with amount and source
-- If no revenue found after exhaustive search, set revenue_found to empty array []
-
-- Return ONLY valid JSON, no markdown`;
+Include URLs for: company website, about page, LinkedIn, Glassdoor, Indeed, ZoomInfo, Crunchbase, Wikipedia.
+Return ALL revenue figures found with their sources - we'll pick the best one later.
+Return ONLY valid JSON, no markdown.`;
 
 // ============================================================================
 // PASS 2 PROMPT - EXACT COPY FROM TEST SCRIPT
