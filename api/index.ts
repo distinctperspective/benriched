@@ -100,18 +100,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .single();
 
       if (existingCompany) {
-        if (companyId) {
-          const responseTimeMs = Date.now() - requestStartTime;
-          await supabase.from('enrichment_requests').upsert({
-            hs_company_id: companyId,
-            domain: normalizedDomain,
-            company_id: existingCompany.id,
-            request_source: 'hubspot',
-            was_cached: true,
-            cost_usd: 0,
-            response_time_ms: responseTimeMs,
-          }, { onConflict: 'hs_company_id' });
-        }
+        // Log the request (always, even without hs_company_id)
+        const responseTimeMs = Date.now() - requestStartTime;
+        await supabase.from('enrichment_requests').insert({
+          hs_company_id: companyId || `api_${requestId}`,
+          domain: normalizedDomain,
+          company_id: existingCompany.id,
+          request_source: companyId ? 'hubspot' : 'api',
+          was_cached: true,
+          cost_usd: 0,
+          response_time_ms: responseTimeMs,
+        });
 
         return res.status(200).json({
           success: true,
@@ -164,17 +163,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .select()
         .single();
 
-      if (companyId && savedCompany) {
+      // Log the request (always, even without hs_company_id)
+      if (savedCompany) {
         const responseTimeMs = Date.now() - requestStartTime;
-        await supabase.from('enrichment_requests').upsert({
-          hs_company_id: companyId,
+        await supabase.from('enrichment_requests').insert({
+          hs_company_id: companyId || `api_${requestId}`,
           domain: normalizedDomain,
           company_id: savedCompany.id,
-          request_source: 'hubspot',
+          request_source: companyId ? 'hubspot' : 'api',
           was_cached: false,
           cost_usd: result.cost.total.costUsd,
           response_time_ms: responseTimeMs,
-        }, { onConflict: 'hs_company_id' });
+        });
       }
 
       return result;
