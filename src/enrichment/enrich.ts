@@ -639,6 +639,7 @@ export async function pass2_analyzeContentWithUsage(
       },
       target_icp: targetIcp,
       target_icp_matches: targetIcpMatches,
+      revenue_pass: hasPassingRevenue || false,
       diagnostics
     };
     
@@ -668,7 +669,8 @@ export async function pass2_analyzeContentWithUsage(
           industry: { confidence: 'low', reasoning: 'Could not parse structured response' }
         },
         target_icp: false,
-        target_icp_matches: []
+        target_icp_matches: [],
+        revenue_pass: false
       },
       usage: aiUsage
     };

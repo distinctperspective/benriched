@@ -74,6 +74,7 @@ export interface EnrichmentResult {
   quality: QualityMetrics;
   target_icp: boolean;
   target_icp_matches: TargetICPMatch[];
+  revenue_pass: boolean;
   diagnostics?: DiagnosticInfo;
 }
 

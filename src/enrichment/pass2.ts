@@ -244,7 +244,8 @@ export async function pass2_analyzeContent(
       source_urls: parsed.source_urls || [],
       quality,
       target_icp: targetIcp,
-      target_icp_matches: targetIcpMatches
+      target_icp_matches: targetIcpMatches,
+      revenue_pass: hasPassingRevenue || false
     };
   } catch (error) {
     console.error('Pass 2 parsing error:', error);
@@ -271,7 +272,8 @@ export async function pass2_analyzeContent(
         industry: { confidence: 'low', reasoning: 'Failed to parse response' }
       },
       target_icp: false,
-      target_icp_matches: []
+      target_icp_matches: [],
+      revenue_pass: false
     };
   }
 }
