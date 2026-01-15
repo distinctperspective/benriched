@@ -37,6 +37,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Auth check - supports multiple methods
   const authHeader = req.headers.authorization;
   const xApiKey = req.headers['x-api-key'] as string;
+  const apiKeyHeader = req.headers['api_key'] as string || req.headers['api-key'] as string;
   const queryApiKey = req.query?.api_key as string;
   const bodyApiKey = body?.api_key as string;
   const apiKey = process.env.API_KEY || 'amlink21';
@@ -44,6 +45,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const isAuthorized = 
     authHeader === `Bearer ${apiKey}` ||
     xApiKey === apiKey ||
+    apiKeyHeader === apiKey ||
     queryApiKey === apiKey ||
     bodyApiKey === apiKey;
   
