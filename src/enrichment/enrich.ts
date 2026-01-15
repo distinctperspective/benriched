@@ -1,7 +1,8 @@
 import { generateText } from 'ai';
 import { EnrichmentResult, EnrichmentResultWithCost, Pass1Result, NAICSCode, TargetICPMatch, RevenueEvidence, AIUsage, CostBreakdown, PerformanceMetrics, DiagnosticInfo } from '../types.js';
 import { scrapeUrl, scrapeMultipleUrls, scrapeMultipleUrlsWithCost, calculateFirecrawlCost } from '../scraper.js';
-import { pickRevenueBandFromEvidence, estimateRevenueBandFromEmployeesAndNaics, estimateFromIndustryAverages, validateRevenueVsEmployees } from '../utils/revenue.js';
+import { pickRevenueBandFromEvidence, estimateRevenueBandFromEmployeesAndNaics, estimateFromIndustryAverages, validateRevenueVsEmployees, estimateEmployeeBandFromRevenue } from '../utils/revenue.js';
+import { parseRevenueAmountToUsd } from '../utils/parsing.js';
 import { parseEmployeeBandLowerBound, countryNameToCode } from '../utils/parsing.js';
 import { detectOutliers, shouldTriggerDeepResearch, runDeepResearch, DeepResearchResult } from './deepResearch.js';
 
@@ -1050,11 +1051,35 @@ export async function enrichDomainWithCost(
   const needsSizeEstimate = !result.company_size || result.company_size === 'unknown' || result.company_size === 'Unknown';
   const needsRevenueEstimate = !result.company_revenue;
   
-  if ((needsSizeEstimate || needsRevenueEstimate) && result.naics_codes_6_digit?.length > 0) {
+  // BETTER FALLBACK: If we have revenue but no employees, estimate employees from revenue
+  // This is more accurate than industry averages when we have actual revenue data
+  if (needsSizeEstimate && !needsRevenueEstimate && result.company_revenue) {
+    // Get revenue in USD from the first evidence
+    const revenueEvidence = pass1Evidence[0];
+    if (revenueEvidence?.amount) {
+      const revenueUsd = parseRevenueAmountToUsd(revenueEvidence.amount);
+      if (revenueUsd && revenueUsd > 0) {
+        const employeeEstimate = estimateEmployeeBandFromRevenue(revenueUsd, result.naics_codes_6_digit);
+        if (employeeEstimate.band) {
+          result.company_size = employeeEstimate.band;
+          result.quality.size = {
+            confidence: 'medium',
+            reasoning: employeeEstimate.reasoning
+          };
+          console.log(`   👥 Size estimated from revenue: ${employeeEstimate.band}`);
+        }
+      }
+    }
+  }
+  
+  // Recalculate needsSizeEstimate after revenue-based estimation
+  const stillNeedsSizeEstimate = !result.company_size || result.company_size === 'unknown' || result.company_size === 'Unknown';
+  
+  if ((stillNeedsSizeEstimate || needsRevenueEstimate) && result.naics_codes_6_digit?.length > 0) {
     const industryEstimate = estimateFromIndustryAverages(result.naics_codes_6_digit);
     console.log(`\n📊 Using industry average estimates (no actual data found):`);
     
-    if (needsSizeEstimate && industryEstimate.sizeBand) {
+    if (stillNeedsSizeEstimate && industryEstimate.sizeBand) {
       result.company_size = industryEstimate.sizeBand;
       result.quality.size = {
         confidence: 'low',

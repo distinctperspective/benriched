@@ -100,6 +100,58 @@ export function estimateRevenueBandFromEmployeesAndNaics(
   };
 }
 
+/**
+ * Estimate employee band from revenue when we have revenue but no employee data.
+ * Uses revenue-per-employee ratios by industry.
+ */
+export function estimateEmployeeBandFromRevenue(
+  revenueUsd: number,
+  naicsCodes: Array<{ code: string; description: string }>
+): { band: string | null; reasoning: string } {
+  if (!revenueUsd || revenueUsd <= 0) {
+    return { band: null, reasoning: 'No revenue data to estimate employees from' };
+  }
+
+  const first = (naicsCodes?.[0]?.code || '').slice(0, 2);
+  // Revenue per employee by industry (conservative - use lower end to get higher employee estimate)
+  const rpe =
+    first === '44' || first === '45'
+      ? 80_000   // Retail
+      : first === '42'
+        ? 150_000 // Wholesale
+        : ['31', '32', '33'].includes(first)
+          ? 150_000 // Manufacturing
+          : first === '51' || first === '54'
+            ? 200_000 // Tech/Professional
+            : 100_000; // Default
+
+  const estimatedEmployees = Math.round(revenueUsd / rpe);
+  
+  // Map to employee band
+  const bands = [
+    { min: 0, max: 1, label: 'Self-employed' },
+    { min: 2, max: 10, label: '2-10 Employees' },
+    { min: 11, max: 50, label: '11-50 Employees' },
+    { min: 51, max: 200, label: '51-200 Employees' },
+    { min: 201, max: 500, label: '201-500 Employees' },
+    { min: 501, max: 1000, label: '501-1,000 Employees' },
+    { min: 1001, max: 5000, label: '1,001-5,000 Employees' },
+    { min: 5001, max: 10000, label: '5,001-10,000 Employees' },
+    { min: 10001, max: Infinity, label: '10,001+ Employees' },
+  ];
+
+  for (const b of bands) {
+    if (estimatedEmployees >= b.min && estimatedEmployees <= b.max) {
+      return {
+        band: b.label,
+        reasoning: `Estimated ~${estimatedEmployees.toLocaleString()} employees from $${(revenueUsd / 1_000_000).toFixed(1)}M revenue (${rpe.toLocaleString()} revenue/employee for NAICS ${first || 'unknown'})`,
+      };
+    }
+  }
+
+  return { band: null, reasoning: 'Could not estimate employee band from revenue' };
+}
+
 // Industry average estimates when no data is found
 // Based on US Census Bureau Statistics of US Businesses (SUSB) data
 interface IndustryEstimate {
