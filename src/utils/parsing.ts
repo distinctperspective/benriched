@@ -67,6 +67,11 @@ export function parseEmployeeBandLowerBound(companySize: string): number | null 
 export function countryNameToCode(countryName: string): string {
   if (!countryName) return 'unknown';
   const name = countryName.trim().toLowerCase();
+  
+  // If it's already a 2-letter country code, return it uppercase
+  if (name.length === 2 && /^[a-z]{2}$/.test(name)) {
+    return name.toUpperCase();
+  }
 
   const countryMap: Record<string, string> = {
     'united states': 'US',
