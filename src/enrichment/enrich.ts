@@ -1081,6 +1081,10 @@ export async function enrichDomainWithCost(
     }
   }
 
+  // Recalculate revenue_pass after all revenue modifications
+  const passingRevenueBandsForFinal = new Set(['10M-25M', '25M-75M', '75M-200M', '200M-500M', '500M-1B', '1B-10B', '10B-100B', '100B-1T']);
+  result.revenue_pass = result.company_revenue ? passingRevenueBandsForFinal.has(result.company_revenue) : false;
+
   // Build cost breakdown
   const firecrawlCost = calculateFirecrawlCost(totalFirecrawlCredits);
   const deepResearchCost = deepResearchResult?.usage?.costUsd || 0;
