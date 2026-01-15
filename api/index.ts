@@ -136,31 +136,38 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ANALYSIS_MODEL_ID
       );
 
-      // Save company
+      // Save company (include hs_company_id if provided)
+      const companyData: Record<string, unknown> = {
+        domain: normalizedDomain,
+        company_name: result.company_name,
+        website: result.website,
+        linkedin_url: result.linkedin_url,
+        business_description: result.business_description,
+        company_size: result.company_size,
+        company_revenue: result.company_revenue,
+        city: result.city,
+        state: result.state,
+        hq_country: result.hq_country,
+        is_us_hq: result.is_us_hq,
+        is_us_subsidiary: result.is_us_subsidiary,
+        naics_codes_6_digit: result.naics_codes_6_digit || [],
+        naics_codes_csv: result.naics_codes_csv,
+        target_icp: result.target_icp,
+        target_icp_matches: result.target_icp_matches || [],
+        source_urls: result.source_urls || [],
+        quality: result.quality,
+        enrichment_cost: result.cost,
+        performance_metrics: result.performance,
+      };
+      
+      // Add hs_company_id if provided from HubSpot
+      if (companyId) {
+        companyData.hs_company_id = companyId;
+      }
+      
       const { data: savedCompany } = await supabase
         .from('companies')
-        .upsert({
-          domain: normalizedDomain,
-          company_name: result.company_name,
-          website: result.website,
-          linkedin_url: result.linkedin_url,
-          business_description: result.business_description,
-          company_size: result.company_size,
-          company_revenue: result.company_revenue,
-          city: result.city,
-          state: result.state,
-          hq_country: result.hq_country,
-          is_us_hq: result.is_us_hq,
-          is_us_subsidiary: result.is_us_subsidiary,
-          naics_codes_6_digit: result.naics_codes_6_digit || [],
-          naics_codes_csv: result.naics_codes_csv,
-          target_icp: result.target_icp,
-          target_icp_matches: result.target_icp_matches || [],
-          source_urls: result.source_urls || [],
-          quality: result.quality,
-          enrichment_cost: result.cost,
-          performance_metrics: result.performance,
-        }, { onConflict: 'domain' })
+        .upsert(companyData, { onConflict: 'domain' })
         .select()
         .single();
 
