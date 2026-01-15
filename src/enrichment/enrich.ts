@@ -1,7 +1,7 @@
 import { generateText } from 'ai';
 import { EnrichmentResult, EnrichmentResultWithCost, Pass1Result, NAICSCode, TargetICPMatch, RevenueEvidence, AIUsage, CostBreakdown, PerformanceMetrics } from '../types.js';
 import { scrapeUrl, scrapeMultipleUrls, scrapeMultipleUrlsWithCost, calculateFirecrawlCost } from '../scraper.js';
-import { pickRevenueBandFromEvidence, estimateRevenueBandFromEmployeesAndNaics, estimateFromIndustryAverages } from '../utils/revenue.js';
+import { pickRevenueBandFromEvidence, estimateRevenueBandFromEmployeesAndNaics, estimateFromIndustryAverages, validateRevenueVsEmployees } from '../utils/revenue.js';
 import { parseEmployeeBandLowerBound, countryNameToCode } from '../utils/parsing.js';
 
 // ============================================================================
@@ -955,6 +955,24 @@ export async function enrichDomainWithCost(
         reasoning: industryEstimate.revenueReasoning
       };
       console.log(`   💰 Revenue: ${industryEstimate.revenueBand} (industry estimate)`);
+    }
+  }
+
+  // Sanity check: validate revenue vs employee count consistency
+  if (result.company_revenue && result.company_size && result.company_size !== 'unknown') {
+    const validation = validateRevenueVsEmployees(
+      result.company_revenue,
+      result.company_size,
+      result.naics_codes_6_digit
+    );
+    if (validation.wasAdjusted) {
+      console.log(`   ⚠️  Revenue adjusted: ${result.company_revenue} → ${validation.adjustedRevenueBand}`);
+      console.log(`      Reason: ${validation.reasoning}`);
+      result.company_revenue = validation.adjustedRevenueBand;
+      result.quality.revenue = {
+        confidence: 'medium',
+        reasoning: validation.reasoning
+      };
     }
   }
 

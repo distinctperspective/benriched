@@ -117,6 +117,88 @@ const INDUSTRY_AVERAGES: Record<string, IndustryEstimate> = {
   'default': { sizeBand: '2-10 Employees', revenueBand: '<1M', avgEmployees: 10, avgRevenue: 500_000 },
 };
 
+// Minimum expected revenue per employee by industry (conservative estimates)
+const MIN_REVENUE_PER_EMPLOYEE: Record<string, number> = {
+  '31': 50_000,  // Manufacturing
+  '32': 50_000,
+  '33': 50_000,
+  '42': 80_000,  // Wholesale
+  '44': 40_000,  // Retail
+  '45': 40_000,
+  '51': 100_000, // Information/Tech
+  '54': 80_000,  // Professional Services
+  '72': 30_000,  // Food Services
+  'default': 50_000,
+};
+
+/**
+ * Validates that revenue and employee count are consistent.
+ * Returns adjusted revenue band if the original seems too low for the employee count.
+ */
+export function validateRevenueVsEmployees(
+  revenueBand: string | null,
+  employeeBand: string | null,
+  naicsCodes: Array<{ code: string; description: string }>
+): { 
+  adjustedRevenueBand: string | null; 
+  wasAdjusted: boolean; 
+  reasoning: string;
+} {
+  if (!revenueBand || !employeeBand) {
+    return { adjustedRevenueBand: revenueBand, wasAdjusted: false, reasoning: '' };
+  }
+
+  // Parse employee lower bound from band
+  const employeeMatch = employeeBand.match(/(\d+)/);
+  if (!employeeMatch) {
+    return { adjustedRevenueBand: revenueBand, wasAdjusted: false, reasoning: '' };
+  }
+  const employeeLower = parseInt(employeeMatch[1]);
+
+  // Parse revenue upper bound from band
+  const revenueBands: Record<string, number> = {
+    '0-500K': 500_000,
+    '500K-1M': 1_000_000,
+    '1M-5M': 5_000_000,
+    '5M-10M': 10_000_000,
+    '10M-25M': 25_000_000,
+    '25M-75M': 75_000_000,
+    '75M-200M': 200_000_000,
+    '200M-500M': 500_000_000,
+    '500M-1B': 1_000_000_000,
+    '1B-10B': 10_000_000_000,
+    '10B-100B': 100_000_000_000,
+    '100B-1T': 1_000_000_000_000,
+  };
+
+  const revenueUpper = revenueBands[revenueBand];
+  if (!revenueUpper) {
+    return { adjustedRevenueBand: revenueBand, wasAdjusted: false, reasoning: '' };
+  }
+
+  // Get minimum revenue per employee for this industry
+  const naics2 = (naicsCodes?.[0]?.code || '').slice(0, 2);
+  const minRpe = MIN_REVENUE_PER_EMPLOYEE[naics2] || MIN_REVENUE_PER_EMPLOYEE['default'];
+
+  // Calculate minimum expected revenue
+  const minExpectedRevenue = employeeLower * minRpe;
+
+  // If reported revenue upper bound is less than minimum expected, it's likely wrong
+  if (revenueUpper < minExpectedRevenue * 0.5) {
+    // Find the appropriate band for the minimum expected revenue
+    const adjustedBand = mapUsdToRevenueBand(minExpectedRevenue);
+    if (adjustedBand && adjustedBand !== revenueBand) {
+      return {
+        adjustedRevenueBand: adjustedBand,
+        wasAdjusted: true,
+        reasoning: `Revenue band ${revenueBand} seems too low for ${employeeBand}. Adjusted to ${adjustedBand} based on minimum ${minRpe.toLocaleString()}/employee for this industry.`,
+      };
+    }
+  }
+
+  return { adjustedRevenueBand: revenueBand, wasAdjusted: false, reasoning: '' };
+}
+
 export function estimateFromIndustryAverages(
   naicsCodes: Array<{ code: string; description: string }>
 ): { 
