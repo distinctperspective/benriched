@@ -535,9 +535,12 @@ export async function pass2_analyzeContentWithUsage(
     ]);
     
     const targetIcpMatches: TargetICPMatch[] = naicsCodes.filter(naics => targetIcpNaics.has(naics.code));
-    // Target ICP requires: matching NAICS codes AND US presence (HQ or subsidiary)
+    // Target ICP requires: matching NAICS codes AND US presence (HQ or subsidiary) AND revenue > $10M
     const isUsPresence = parsed.is_us_hq || parsed.is_us_subsidiary;
-    const targetIcp = targetIcpMatches.length > 0 && isUsPresence;
+    // Revenue bands that PASS (above $10M): 10M-25M, 25M-75M, 75M-200M, 200M-500M, 500M-1B, 1B-10B, 10B-100B, 100B-1T
+    const passingRevenueBands = new Set(['10M-25M', '25M-75M', '75M-200M', '200M-500M', '500M-1B', '1B-10B', '10B-100B', '100B-1T']);
+    const hasPassingRevenue = parsed.company_revenue && passingRevenueBands.has(parsed.company_revenue);
+    const targetIcp = targetIcpMatches.length > 0 && isUsPresence && hasPassingRevenue;
     
     // Valid revenue bands - reject any AI hallucinated bands
     const VALID_REVENUE_BANDS = new Set([
