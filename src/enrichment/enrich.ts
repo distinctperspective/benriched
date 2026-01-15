@@ -57,7 +57,7 @@ Extract the following fields:
 - **state**: For US companies, full state name (e.g., "Massachusetts", "California"); for non-US, main region or null
 - **hq_country**: 2-letter ISO country code (e.g., "US", "CA", "DE")
 - **is_us_hq**: Boolean - true if global HQ is in the United States
-- **is_us_subsidiary**: Boolean - true if subsidiary whose parent is US-headquartered
+- **is_us_subsidiary**: Boolean - true if this company has US operations/subsidiary (even if HQ is outside US). Examples: Solina (France HQ) has Solina USA, Ajinomoto (Japan HQ) has Ajinomoto Foods North America
 - **linkedin_url**: Official LinkedIn company page URL (null if not found)
 - **company_revenue**: Annual revenue using ONLY these exact bands:
   "0-500K", "500K-1M", "1M-5M", "5M-10M", "10M-25M", "25M-75M", 
