@@ -35,17 +35,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const authHeader = req.headers.authorization;
   const xApiKey = req.headers['x-api-key'] as string;
   const queryApiKey = req.query?.api_key as string;
+  const bodyApiKey = req.body?.api_key as string;
   const apiKey = process.env.API_KEY || 'amlink21';
   
   const isAuthorized = 
     authHeader === `Bearer ${apiKey}` ||
     xApiKey === apiKey ||
-    queryApiKey === apiKey;
+    queryApiKey === apiKey ||
+    bodyApiKey === apiKey;
   
   if (!isAuthorized) {
     return res.status(401).json({ 
       error: 'Unauthorized',
-      hint: 'Use one of: Authorization: Bearer <key>, X-API-Key: <key>, or ?api_key=<key>',
+      hint: 'Include api_key in body, query, X-API-Key header, or Authorization: Bearer <key>',
     });
   }
 
