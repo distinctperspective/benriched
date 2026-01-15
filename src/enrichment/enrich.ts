@@ -991,23 +991,28 @@ export async function enrichDomainWithCost(
     }
   }
 
-  // Revenue fallback logic
-  if (!result.company_revenue) {
-    const evidence = Array.isArray(pass1Result.revenue_found) ? pass1Result.revenue_found : [];
-    const picked = pickRevenueBandFromEvidence(evidence);
+  // Revenue logic: Prefer Pass 1 evidence over Pass 2 when we have actual data
+  const pass1Evidence = Array.isArray(pass1Result.revenue_found) ? pass1Result.revenue_found : [];
+  const hasPass1Revenue = pass1Evidence.length > 0 && pass1Evidence.some(e => e.amount && e.amount !== 'null');
+  
+  if (hasPass1Revenue) {
+    // Use Pass 1 evidence - it has actual revenue figures from web search
+    const picked = pickRevenueBandFromEvidence(pass1Evidence);
     if (picked.band) {
       result.company_revenue = picked.band;
       result.quality.revenue.confidence = picked.confidence;
       result.quality.revenue.reasoning = picked.reasoning;
-    } else {
-      const employeeLower = parseEmployeeBandLowerBound(result.company_size);
-      if (employeeLower && employeeLower > 0) {
-        const estimated = estimateRevenueBandFromEmployeesAndNaics(employeeLower, result.naics_codes_6_digit);
-        if (estimated.band) {
-          result.company_revenue = estimated.band;
-          result.quality.revenue.confidence = 'low';
-          result.quality.revenue.reasoning = `${estimated.reasoning}. This is an estimate (no explicit revenue figure found).`;
-        }
+      console.log(`   💰 Using Pass 1 revenue evidence: ${picked.band}`);
+    }
+  } else if (!result.company_revenue) {
+    // No Pass 1 evidence and no Pass 2 revenue - try employee-based estimate
+    const employeeLower = parseEmployeeBandLowerBound(result.company_size);
+    if (employeeLower && employeeLower > 0) {
+      const estimated = estimateRevenueBandFromEmployeesAndNaics(employeeLower, result.naics_codes_6_digit);
+      if (estimated.band) {
+        result.company_revenue = estimated.band;
+        result.quality.revenue.confidence = 'low';
+        result.quality.revenue.reasoning = `${estimated.reasoning}. This is an estimate (no explicit revenue figure found).`;
       }
     }
   }
