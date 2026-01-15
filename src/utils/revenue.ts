@@ -118,17 +118,18 @@ const INDUSTRY_AVERAGES: Record<string, IndustryEstimate> = {
 };
 
 // Minimum expected revenue per employee by industry (conservative estimates)
+// Food manufacturing (311xxx) typically has $150K-300K revenue per employee
 const MIN_REVENUE_PER_EMPLOYEE: Record<string, number> = {
-  '31': 50_000,  // Manufacturing
-  '32': 50_000,
-  '33': 50_000,
-  '42': 80_000,  // Wholesale
-  '44': 40_000,  // Retail
-  '45': 40_000,
-  '51': 100_000, // Information/Tech
-  '54': 80_000,  // Professional Services
-  '72': 30_000,  // Food Services
-  'default': 50_000,
+  '31': 150_000, // Food/Beverage Manufacturing - higher due to product sales
+  '32': 80_000,  // Other Manufacturing
+  '33': 80_000,  // Other Manufacturing
+  '42': 150_000, // Wholesale - high revenue per employee
+  '44': 80_000,  // Retail
+  '45': 80_000,  // Retail
+  '51': 150_000, // Information/Tech
+  '54': 100_000, // Professional Services
+  '72': 50_000,  // Food Services (restaurants)
+  'default': 75_000,
 };
 
 /**
