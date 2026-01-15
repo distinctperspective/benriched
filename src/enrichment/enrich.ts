@@ -1023,10 +1023,6 @@ export async function enrichDomainWithCost(
   // Revenue logic: Prefer Pass 1 evidence over Pass 2 when we have actual data
   const pass1Evidence = Array.isArray(pass1Result.revenue_found) ? pass1Result.revenue_found : [];
   const hasPass1Revenue = pass1Evidence.length > 0 && pass1Evidence.some(e => e.amount && e.amount !== 'null');
-  console.log(`   📊 Pass 1 revenue evidence: ${pass1Evidence.length} items, hasRevenue=${hasPass1Revenue}`);
-  if (pass1Evidence.length > 0) {
-    console.log(`   📊 First evidence: ${JSON.stringify(pass1Evidence[0])}`);
-  }
   
   if (hasPass1Revenue) {
     // Use Pass 1 evidence - it has actual revenue figures from web search
