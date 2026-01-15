@@ -59,7 +59,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const requestStartTime = Date.now();
-  const { domain, hs_company_id, hs_object_id, force_refresh = false, async = false } = body || {};
+  const { domain, hs_company_id, hs_object_id, force_refresh = false, async = false, deep_research = false } = body || {};
   const companyId = hs_company_id || hs_object_id; // Support both field names
   const requestId = randomUUID();
 
@@ -143,7 +143,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         analysisModel,
         process.env.FIRECRAWL_API_KEY,
         SEARCH_MODEL_ID,
-        ANALYSIS_MODEL_ID
+        ANALYSIS_MODEL_ID,
+        deep_research as boolean
       );
 
       // Save company (include hs_company_id if provided)

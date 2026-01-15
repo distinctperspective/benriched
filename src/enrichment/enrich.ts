@@ -725,7 +725,8 @@ export async function enrichDomainWithCost(
   analysisModel: any,
   firecrawlApiKey?: string,
   searchModelId: string = 'perplexity/sonar-pro',
-  analysisModelId: string = 'openai/gpt-4o-mini'
+  analysisModelId: string = 'openai/gpt-4o-mini',
+  forceDeepResearch: boolean = false
 ): Promise<EnrichmentResultWithCost> {
   const startTime = Date.now();
   console.log(`\n🚀 Starting enrichment for domain: ${domain}`);
@@ -755,7 +756,10 @@ export async function enrichDomainWithCost(
   let deepResearchResult: DeepResearchResult | null = null;
   const outlierFlags = detectOutliers(pass1Result);
   
-  if (shouldTriggerDeepResearch(outlierFlags)) {
+  if (forceDeepResearch || shouldTriggerDeepResearch(outlierFlags)) {
+    if (forceDeepResearch) {
+      console.log(`\n🔬 Deep Research FORCED by request parameter`);
+    }
     deepResearchResult = await runDeepResearch(
       domain,
       pass1Result.company_name,
