@@ -34,7 +34,7 @@ export async function pass2_analyzeContentWithUsage(
   console.log(`\n🔬 Pass 2: Analyzing scraped content...`);
   
   const allScrapedText = Array.from(scrapedContent.values()).join(' ').toLowerCase();
-  const companyNameLower = companyName.toLowerCase();
+  const companyNameLower = companyName ? companyName.toLowerCase() : '';
   const domainBase = domain.replace('www.', '').split('.')[0].toLowerCase();
   
   const companyNameFound = allScrapedText.includes(companyNameLower);
