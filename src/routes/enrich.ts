@@ -122,14 +122,16 @@ app.post('/', async (c) => {
       console.log(`\n💾 Saved company to database: ${savedCompany?.company_name}`);
     }
 
-    // Track the request if hs_company_id provided
-    if (hs_company_id && savedCompany) {
+    // Always track the request with raw_api_responses
+    // Generate a unique ID if no hs_company_id provided
+    if (savedCompany) {
       const responseTimeMs = Date.now() - requestStartTime;
+      const effectiveHsCompanyId = hs_company_id || `api_${crypto.randomUUID()}`;
       const requestRecord: EnrichmentRequestRecord = {
-        hs_company_id,
+        hs_company_id: effectiveHsCompanyId,
         domain: normalizedDomain,
         company_id: savedCompany.id,
-        request_source: 'hubspot',
+        request_source: hs_company_id ? 'hubspot' : 'api',
         was_cached: false,
         cost_usd: result.cost.total.costUsd,
         response_time_ms: responseTimeMs,
@@ -139,7 +141,7 @@ app.post('/', async (c) => {
       if (requestError) {
         console.error('Error saving request:', requestError);
       } else {
-        console.log(`\n📝 Tracked request for HubSpot company: ${hs_company_id}`);
+        console.log(`\n📝 Tracked request: ${effectiveHsCompanyId}`);
       }
     }
 
