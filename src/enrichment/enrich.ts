@@ -58,6 +58,8 @@ const KNOWN_PARENT_DOMAINS: Record<string, string> = {
   'treehouse foods': 'treehousefoods.com',
   'b&g foods': 'bgfoods.com',
   'campbell soup': 'campbellsoupcompany.com',
+  'campbell soup company': 'campbellsoupcompany.com',
+  'the campbells company': 'campbellsoupcompany.com',
   "campbell's": 'campbellsoupcompany.com',
   'smucker': 'jmsmucker.com',
   'j.m. smucker': 'jmsmucker.com',
