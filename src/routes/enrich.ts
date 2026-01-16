@@ -43,6 +43,7 @@ app.post('/', async (c) => {
             domain: normalizedDomain,
             company_id: existingCompany.id,
             request_source: 'hubspot',
+            request_type: 'cached',
             was_cached: true,
             cost_usd: 0,
             response_time_ms: responseTimeMs,
@@ -105,7 +106,6 @@ app.post('/', async (c) => {
       target_icp_matches: result.target_icp_matches || [],
       source_urls: result.source_urls || [],
       quality: result.quality,
-      enrichment_cost: result.cost,
       performance_metrics: result.performance,
       // Parent company linking
       parent_company_name: result.parent_company_name || null,
@@ -132,10 +132,12 @@ app.post('/', async (c) => {
         domain: normalizedDomain,
         company_id: savedCompany.id,
         request_source: hs_company_id ? 'hubspot' : 'api',
+        request_type: 'enrichment',
         was_cached: false,
         cost_usd: result.cost.total.costUsd,
         response_time_ms: responseTimeMs,
         raw_api_responses: result.raw_api_responses || null,
+        enrichment_cost: result.cost || null,
       };
       const { error: requestError } = await saveEnrichmentRequest(requestRecord);
       if (requestError) {

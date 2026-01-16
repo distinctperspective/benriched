@@ -6,16 +6,29 @@ export interface RawApiResponses {
   deepResearch?: string;
 }
 
+export interface EnrichmentCost {
+  ai?: {
+    pass1?: { model: string; inputTokens: number; outputTokens: number; totalTokens: number; costUsd: number };
+    pass2?: { model: string; inputTokens: number; outputTokens: number; totalTokens: number; costUsd: number };
+    deepResearch?: { model: string; inputTokens: number; outputTokens: number; totalTokens: number; costUsd: number };
+    total?: { inputTokens: number; outputTokens: number; totalTokens: number; costUsd: number };
+  };
+  firecrawl?: { scrapeCount: number; creditsUsed: number; costUsd: number };
+  total?: { costUsd: number };
+}
+
 export interface EnrichmentRequestRecord {
   id?: string;
   hs_company_id: string;
   domain: string;
   company_id?: string | null;
   request_source?: string;
+  request_type?: string;
   was_cached: boolean;
   cost_usd?: number | null;
   response_time_ms?: number | null;
   raw_api_responses?: RawApiResponses | null;
+  enrichment_cost?: EnrichmentCost | null;
   created_at?: string;
 }
 

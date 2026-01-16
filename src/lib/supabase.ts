@@ -25,7 +25,6 @@ export interface CompanyRecord {
   target_icp_matches: Array<{ code: string; description: string }>;
   source_urls: string[];
   quality: Record<string, any>;
-  enrichment_cost: Record<string, any>;
   performance_metrics: Record<string, any>;
   // Parent company linking
   parent_company_id?: string | null;

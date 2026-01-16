@@ -3,7 +3,7 @@ import { EnrichmentResult, Pass1Result, NAICSCode, TargetICPMatch, RevenueEviden
 import { countryNameToCode } from '../../utils/parsing.js';
 import { calculateAICost } from './pricing.js';
 import { PASS2_PROMPT } from './prompts.js';
-import { TARGET_ICP_NAICS, VALID_REVENUE_BANDS, PASSING_REVENUE_BANDS, TARGET_REGIONS } from './icp.js';
+import { TARGET_ICP_NAICS, VALID_REVENUE_BANDS, PASSING_REVENUE_BANDS, TARGET_REGIONS, normalizeSizeBand, VALID_SIZE_BANDS } from './icp.js';
 
 export interface Pass2WithUsage {
   result: EnrichmentResult;
@@ -140,7 +140,7 @@ export async function pass2_analyzeContentWithUsage(
       }
     }
     
-    let finalSize = parsed.company_size || 'unknown';
+    let finalSize = normalizeSizeBand(parsed.company_size);
     // Prefer Pass 1 employee data if available and Pass 2 returned unknown or a very small band
     const pass1EmployeeData = pass1Data?.employee_count_found;
     const pass1EmployeeList = Array.isArray(pass1EmployeeData) ? pass1EmployeeData : (pass1EmployeeData ? [pass1EmployeeData] : []);
@@ -169,6 +169,27 @@ export async function pass2_analyzeContentWithUsage(
         else if (maxCount > 200) finalSize = '201-500 Employees';
         else if (maxCount > 50) finalSize = '51-200 Employees';
       }
+    }
+    
+    // Sanity check: flag size/revenue mismatches
+    // Large revenue with small employee count is suspicious
+    const sizeIndex = VALID_SIZE_BANDS.indexOf(finalSize);
+    const revenueIndex = ['0-500K', '500K-1M', '1M-5M', '5M-10M', '10M-25M', '25M-75M', '75M-200M', '200M-500M', '500M-1B', '1B-10B', '10B-100B', '100B-1T'].indexOf(finalRevenue || '');
+    
+    // Revenue 10B+ should have 5000+ employees (sizeIndex >= 7)
+    // Revenue 1B-10B should have 1000+ employees (sizeIndex >= 6)
+    // Revenue 200M-1B should have 200+ employees (sizeIndex >= 4)
+    let sizeMismatch = false;
+    if (revenueIndex >= 10 && sizeIndex < 7) sizeMismatch = true; // 10B+ needs 5000+
+    else if (revenueIndex >= 9 && sizeIndex < 6) sizeMismatch = true; // 1B-10B needs 1000+
+    else if (revenueIndex >= 7 && sizeIndex < 4) sizeMismatch = true; // 200M-1B needs 200+
+    
+    if (sizeMismatch) {
+      console.log(`   ⚠️ Size/revenue mismatch: ${finalRevenue} revenue with ${finalSize}`);
+      // Trust the revenue more, bump up the size estimate
+      if (revenueIndex >= 10) finalSize = '5,001-10,000 Employees'; // 10B+
+      else if (revenueIndex >= 9) finalSize = '1,001-5,000 Employees'; // 1B-10B
+      else if (revenueIndex >= 7) finalSize = '201-500 Employees'; // 200M-1B
     }
     
     const diagnostics: DiagnosticInfo = {

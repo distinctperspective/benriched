@@ -83,9 +83,15 @@ Return ALL revenue figures found with sources. Return ONLY valid JSON.`,
     
     return { result, usage: aiUsage, rawResponse: text };
   } catch {
+    // Fallback: use domain as company name but capitalize it properly
+    const fallbackName = domain
+      .replace(/\.(com|io|co|org|net|ca|info|ag)$/i, '')
+      .split(/[-_]/)
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
     return {
       result: {
-        company_name: domain.replace(/\.(com|io|co|org|net)$/, ''),
+        company_name: fallbackName,
         urls_to_crawl: [`https://${domain}`, `https://${domain}/about`, `https://${domain}/contact`],
         search_queries: [`${domain} company headquarters`, `${domain} company revenue employees`]
       },

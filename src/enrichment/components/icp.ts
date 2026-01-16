@@ -17,6 +17,38 @@ export const VALID_REVENUE_BANDS = new Set([
   '75M-200M', '200M-500M', '500M-1B', '1B-10B', '10B-100B', '100B-1T'
 ]);
 
+// Valid size bands
+export const VALID_SIZE_BANDS = [
+  '0-1 Employees', '2-10 Employees', '11-50 Employees', '51-200 Employees',
+  '201-500 Employees', '501-1,000 Employees', '1,001-5,000 Employees',
+  '5,001-10,000 Employees', '10,001+ Employees'
+];
+
+// Normalize size band to valid values
+export function normalizeSizeBand(size: string | null | undefined): string {
+  if (!size || size === 'unknown') return 'unknown';
+  
+  // Already valid
+  if (VALID_SIZE_BANDS.includes(size)) return size;
+  
+  // Extract number from size string
+  const numMatch = size.match(/(\d[\d,]*)/);
+  if (!numMatch) return 'unknown';
+  
+  const count = parseInt(numMatch[1].replace(/,/g, ''), 10);
+  
+  // Map to valid band
+  if (count <= 1) return '0-1 Employees';
+  if (count <= 10) return '2-10 Employees';
+  if (count <= 50) return '11-50 Employees';
+  if (count <= 200) return '51-200 Employees';
+  if (count <= 500) return '201-500 Employees';
+  if (count <= 1000) return '501-1,000 Employees';
+  if (count <= 5000) return '1,001-5,000 Employees';
+  if (count <= 10000) return '5,001-10,000 Employees';
+  return '10,001+ Employees';
+}
+
 // Revenue bands that PASS (above $10M)
 export const PASSING_REVENUE_BANDS = new Set([
   '10M-25M', '25M-75M', '75M-200M', '200M-500M', '500M-1B', '1B-10B', '10B-100B', '100B-1T'
