@@ -33,6 +33,12 @@ export async function pass2_analyzeContentWithUsage(
 ): Promise<Pass2WithUsage> {
   console.log(`\n🔬 Pass 2: Analyzing scraped content...`);
   
+  // Handle null/empty scrapedContent
+  if (!scrapedContent || scrapedContent.size === 0) {
+    console.warn(`⚠️  No scraped content available for ${domain}`);
+    scrapedContent = new Map();
+  }
+  
   const allScrapedText = Array.from(scrapedContent.values()).join(' ').toLowerCase();
   const companyNameLower = companyName ? companyName.toLowerCase() : '';
   const domainBase = domain.replace('www.', '').split('.')[0].toLowerCase();
