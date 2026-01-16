@@ -61,7 +61,9 @@ Return ALL revenue figures found with sources. Return ONLY valid JSON.`,
   console.log(`   🔢 Tokens: ${inputTokens} in / ${outputTokens} out = ${totalTokens} total ($${costUsd.toFixed(4)})`);
   
   try {
-    const cleanText = text.trim().replace(/^```json?\n?/i, '').replace(/\n?```$/i, '');
+    let cleanText = text.trim().replace(/^```json?\n?/i, '').replace(/\n?```$/i, '');
+    // Remove citation markers like [1], [2], etc. that Perplexity adds after JSON values
+    cleanText = cleanText.replace(/\}\s*\[\d+\]/g, '}').replace(/"\s*\[\d+\]/g, '"');
     const result = JSON.parse(cleanText);
     console.log(`   ✅ Found ${result.urls_to_crawl?.length || 0} URLs to crawl`);
     
