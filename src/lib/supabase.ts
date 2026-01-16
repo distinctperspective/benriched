@@ -39,6 +39,49 @@ export interface CompanyRecord {
 }
 
 export async function saveCompany(company: CompanyRecord): Promise<{ data: CompanyRecord | null; error: any }> {
+  // Check if existing record has inherited data that should be preserved
+  const { data: existing } = await supabase
+    .from('companies')
+    .select('parent_company_id, parent_company_name, parent_company_domain, inherited_revenue, inherited_size, company_revenue, company_size')
+    .eq('domain', company.domain)
+    .single();
+  
+  // If existing record has inherited revenue and new data doesn't have parent info,
+  // preserve the inherited revenue from the parent
+  if (existing?.inherited_revenue && existing?.parent_company_name) {
+    // Check if new enrichment found worse revenue than inherited
+    const newRevenue = company.company_revenue;
+    const existingRevenue = existing.company_revenue;
+    
+    // Revenue bands in order (for comparison)
+    const revenueBandOrder = ['0-500K', '500K-1M', '1M-5M', '5M-10M', '10M-25M', '25M-75M', '75M-200M', '200M-500M', '500M-1B', '1B-10B', '10B-100B', '100B-1T'];
+    const newIndex = revenueBandOrder.indexOf(newRevenue || '');
+    const existingIndex = revenueBandOrder.indexOf(existingRevenue || '');
+    
+    // If new revenue is worse (lower band) than existing inherited, keep the inherited
+    if (existingIndex > newIndex) {
+      company.company_revenue = existingRevenue;
+      company.inherited_revenue = true;
+    }
+    
+    // Always preserve parent company info
+    company.parent_company_id = existing.parent_company_id;
+    company.parent_company_name = existing.parent_company_name;
+    company.parent_company_domain = existing.parent_company_domain;
+  }
+  
+  // Same for inherited size
+  if (existing?.inherited_size && existing?.parent_company_name) {
+    const sizeBandOrder = ['0-1 Employees', '2-10 Employees', '11-50 Employees', '51-200 Employees', '201-500 Employees', '501-1,000 Employees', '1,001-5,000 Employees', '5,001-10,000 Employees', '10,001+ Employees'];
+    const newSizeIndex = sizeBandOrder.indexOf(company.company_size || '');
+    const existingSizeIndex = sizeBandOrder.indexOf(existing.company_size || '');
+    
+    if (existingSizeIndex > newSizeIndex) {
+      company.company_size = existing.company_size;
+      company.inherited_size = true;
+    }
+  }
+  
   const { data, error } = await supabase
     .from('companies')
     .upsert(company, { onConflict: 'domain' })
