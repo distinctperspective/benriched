@@ -660,9 +660,25 @@ export async function enrichDomainWithCost(
   const entityCheck = detectEntityMismatch(pass1Result.company_name, domain, scrapedContent);
   if (entityCheck.mismatch) {
     console.log(`\n⚠️  Potential entity mismatch detected (${entityCheck.signal}). Re-running Pass 1 in strict mode...`);
-    pass1Result = await pass1_identifyUrlsStrict(domain, searchModel, pass1Result.company_name);
-    console.log(`   📝 Company (strict): ${pass1Result.company_name}`);
-    console.log(`   🔗 URLs (strict): ${pass1Result.urls_to_crawl.join(', ')}`);
+    // Preserve original revenue/employee data before strict mode overwrites
+    const originalRevenueFound = pass1Result.revenue_found;
+    const originalEmployeeFound = pass1Result.employee_count_found;
+    const originalHeadquarters = pass1Result.headquarters;
+    
+    const strictResult = await pass1_identifyUrlsStrict(domain, searchModel, pass1Result.company_name);
+    console.log(`   📝 Company (strict): ${strictResult.company_name}`);
+    console.log(`   🔗 URLs (strict): ${strictResult.urls_to_crawl.join(', ')}`);
+    
+    // Merge: use strict result but preserve original data if strict didn't find any
+    pass1Result = {
+      ...strictResult,
+      revenue_found: (strictResult.revenue_found && strictResult.revenue_found.length > 0) 
+        ? strictResult.revenue_found 
+        : originalRevenueFound,
+      employee_count_found: strictResult.employee_count_found || originalEmployeeFound,
+      headquarters: strictResult.headquarters || originalHeadquarters,
+    };
+    
     console.log(`\n🔥 Re-scraping ${pass1Result.urls_to_crawl.length} URLs with Firecrawl...`);
     scrapedContent = await scrapeMultipleUrls(pass1Result.urls_to_crawl, firecrawlApiKey);
     console.log(`   ✅ Successfully scraped ${scrapedContent.size} pages`);
