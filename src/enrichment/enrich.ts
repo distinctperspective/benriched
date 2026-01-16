@@ -2,24 +2,18 @@ import { generateText } from 'ai';
 import { EnrichmentResult, EnrichmentResultWithCost, Pass1Result, NAICSCode, TargetICPMatch, RevenueEvidence, AIUsage, CostBreakdown, PerformanceMetrics, DiagnosticInfo } from '../types.js';
 import { scrapeUrl, scrapeMultipleUrls, scrapeMultipleUrlsWithCost, calculateFirecrawlCost } from '../scraper.js';
 import { pickRevenueBandFromEvidence, estimateRevenueBandFromEmployeesAndNaics, estimateFromIndustryAverages, validateRevenueVsEmployees, estimateEmployeeBandFromRevenue } from '../utils/revenue.js';
-import { parseRevenueAmountToUsd } from '../utils/parsing.js';
-import { parseEmployeeBandLowerBound, countryNameToCode } from '../utils/parsing.js';
+import { parseRevenueAmountToUsd, parseEmployeeBandLowerBound, countryNameToCode } from '../utils/parsing.js';
 import { detectOutliers, shouldTriggerDeepResearch, runDeepResearch, DeepResearchResult } from './deepResearch.js';
 
-// ============================================================================
-// AI MODEL PRICING (per 1M tokens)
-// ============================================================================
-// Perplexity sonar-pro: $3/1M input, $15/1M output
-// GPT-4o-mini: $0.15/1M input, $0.60/1M output
-const AI_PRICING: Record<string, { input: number; output: number }> = {
-  'perplexity/sonar-pro': { input: 3.0, output: 15.0 },
-  'openai/gpt-4o-mini': { input: 0.15, output: 0.60 },
-};
+// Import from components
+import { calculateAICost, AI_PRICING } from './components/pricing.js';
+import { mapEmployeeCountToBand, employeeCountToBand } from './components/employees.js';
+import { validateLinkedInPage } from './components/linkedin.js';
+import { detectEntityMismatch } from './components/entityDetection.js';
+import { categorizeUrls } from './components/urlCategorization.js';
 
-export function calculateAICost(model: string, inputTokens: number, outputTokens: number): number {
-  const pricing = AI_PRICING[model] || { input: 0.15, output: 0.60 }; // default to gpt-4o-mini
-  return (inputTokens * pricing.input / 1_000_000) + (outputTokens * pricing.output / 1_000_000);
-}
+// Re-export calculateAICost for external use
+export { calculateAICost };
 
 // ============================================================================
 // PASS 1 PROMPT - EXACT COPY FROM TEST SCRIPT
@@ -127,167 +121,6 @@ IMPORTANT:
 - Determine NAICS codes based on what the company actually does
 - Return null for fields not found, not "unknown"
 - Include all URLs you used to extract information in source_urls`;
-
-// ============================================================================
-// EMPLOYEE COUNT TO BAND MAPPING
-// ============================================================================
-
-function mapEmployeeCountToBand(employeeStr: string): string | null {
-  // Parse employee count from strings like "11-50", "51-200", "1,000+", "76"
-  const cleanStr = employeeStr.replace(/,/g, '').replace(/\s+/g, '');
-  
-  // Handle range format like "11-50" or "51–200"
-  const rangeMatch = cleanStr.match(/(\d+)[-–](\d+)/);
-  if (rangeMatch) {
-    const lower = parseInt(rangeMatch[1]);
-    const upper = parseInt(rangeMatch[2]);
-    const avg = Math.floor((lower + upper) / 2);
-    return employeeCountToBand(avg);
-  }
-  
-  // Handle "1000+" format
-  const plusMatch = cleanStr.match(/(\d+)\+/);
-  if (plusMatch) {
-    const count = parseInt(plusMatch[1]);
-    return employeeCountToBand(count);
-  }
-  
-  // Handle plain number
-  const numMatch = cleanStr.match(/(\d+)/);
-  if (numMatch) {
-    return employeeCountToBand(parseInt(numMatch[1]));
-  }
-  
-  return null;
-}
-
-function employeeCountToBand(count: number): string {
-  if (count <= 1) return '0-1 Employees';
-  if (count <= 10) return '2-10 Employees';
-  if (count <= 50) return '11-50 Employees';
-  if (count <= 200) return '51-200 Employees';
-  if (count <= 500) return '201-500 Employees';
-  if (count <= 1000) return '501-1,000 Employees';
-  if (count <= 5000) return '1,001-5,000 Employees';
-  if (count <= 10000) return '5,001-10,000 Employees';
-  return '10,001+ Employees';
-}
-
-// ============================================================================
-// LINKEDIN VALIDATION - EXACT COPY FROM TEST SCRIPT
-// ============================================================================
-
-interface LinkedInValidation {
-  isValid: boolean;
-  reason?: string;
-  linkedinEmployees?: string;
-  linkedinWebsite?: string;
-  linkedinLocation?: string;
-}
-
-async function validateLinkedInPage(
-  linkedinUrl: string,
-  expectedDomain: string,
-  expectedEmployeeCount: string | null,
-  expectedLocation: string | null,
-  scrapedContent: Map<string, string>,
-  firecrawlApiKey?: string
-): Promise<LinkedInValidation> {
-  let linkedinContent: string | null = null;
-  for (const [url, content] of scrapedContent) {
-    if (url.includes('linkedin.com')) {
-      linkedinContent = content;
-      break;
-    }
-  }
-  
-  if (!linkedinContent) {
-    linkedinContent = await scrapeUrl(linkedinUrl, firecrawlApiKey);
-  }
-  
-  if (!linkedinContent) {
-    // LinkedIn requires auth and can't be scraped directly
-    // Trust Pass 1 (Perplexity) since it has access to LinkedIn data
-    // Only reject if we have strong evidence of mismatch from other sources
-    return { isValid: true, reason: `LinkedIn page could not be scraped (auth required), trusting Pass 1` };
-  }
-  
-  const websiteMatch = linkedinContent.match(/Website[:\s]*\n?\s*(https?:\/\/[^\s\n]+|www\.[^\s\n]+)/i);
-  const linkedinWebsite = websiteMatch ? websiteMatch[1].toLowerCase() : null;
-  const employeeMatch = linkedinContent.match(/(\d+[-–]\d+|\d+\+?)\s*employees/i);
-  const linkedinEmployees = employeeMatch ? employeeMatch[1] : null;
-  const locationMatch = linkedinContent.match(/(Fort Worth|Dallas|Toronto|San Francisco|New York|Chicago|Los Angeles|Boston|Seattle|Austin|Denver|Miami|Atlanta|Houston|Phoenix)/i);
-  const linkedinLocation = locationMatch ? locationMatch[1] : null;
-  
-  const issues: string[] = [];
-  
-  if (linkedinWebsite) {
-    const normalizedExpected = expectedDomain.replace(/^www\./, '').toLowerCase();
-    const normalizedLinkedin = linkedinWebsite.replace(/^(https?:\/\/)?(www\.)?/, '').replace(/\/$/, '').toLowerCase();
-    if (!normalizedLinkedin.includes(normalizedExpected) && !normalizedExpected.includes(normalizedLinkedin.split('/')[0])) {
-      issues.push(`Website mismatch: LinkedIn shows ${linkedinWebsite}, expected ${expectedDomain}`);
-    }
-  }
-  
-  if (linkedinEmployees && expectedEmployeeCount) {
-    const linkedinEmpNum = parseInt(linkedinEmployees.replace(/[^\d]/g, ''));
-    const expectedEmpNum = parseInt(expectedEmployeeCount.replace(/[^\d]/g, ''));
-    if (linkedinEmpNum < 50 && expectedEmpNum > 100) {
-      issues.push(`Employee count mismatch: LinkedIn shows ${linkedinEmployees}, expected ~${expectedEmployeeCount}`);
-    }
-    if (linkedinEmpNum <= 10 && expectedEmpNum > 50) {
-      issues.push(`Major employee mismatch: LinkedIn shows ${linkedinEmployees}, expected ~${expectedEmployeeCount}`);
-    }
-  }
-  
-  if (linkedinLocation && expectedLocation) {
-    const normalizedExpected = expectedLocation.toLowerCase();
-    const normalizedLinkedin = linkedinLocation.toLowerCase();
-    if (normalizedExpected.includes('toronto') && !normalizedLinkedin.includes('toronto')) {
-      if (normalizedLinkedin.includes('fort worth') || normalizedLinkedin.includes('dallas') || normalizedLinkedin.includes('texas')) {
-        issues.push(`Location mismatch: LinkedIn shows ${linkedinLocation}, expected ${expectedLocation}`);
-      }
-    }
-  }
-  
-  if (issues.length > 0) {
-    return {
-      isValid: false,
-      reason: issues.join('; '),
-      linkedinEmployees: linkedinEmployees || undefined,
-      linkedinWebsite: linkedinWebsite || undefined,
-      linkedinLocation: linkedinLocation || undefined
-    };
-  }
-  
-  return { isValid: true, linkedinEmployees: linkedinEmployees || undefined, linkedinWebsite: linkedinWebsite || undefined };
-}
-
-// ============================================================================
-// ENTITY MISMATCH DETECTION - EXACT COPY FROM TEST SCRIPT
-// ============================================================================
-
-function detectEntityMismatch(
-  companyName: string,
-  domain: string,
-  scrapedContent: Map<string, string>
-): { mismatch: boolean; signal: 'none' | 'weak' | 'strong' } {
-  const companyLower = (companyName || '').toLowerCase();
-  const domainBase = domain.replace(/^www\./, '').split('.')[0].toLowerCase();
-  const siteText = Array.from(scrapedContent.entries())
-    .filter(([url]) => url.includes(domain.replace(/^www\./, '')))
-    .map(([, content]) => content)
-    .join(' ')
-    .toLowerCase();
-
-  if (!siteText) return { mismatch: false, signal: 'none' };
-  const hasCompany = companyLower.length > 3 && siteText.includes(companyLower);
-  const hasDomainToken = domainBase.length > 2 && siteText.includes(domainBase);
-  if (hasCompany) return { mismatch: false, signal: 'none' };
-  if (!hasCompany && hasDomainToken) return { mismatch: true, signal: 'strong' };
-  if (!hasCompany && !hasDomainToken) return { mismatch: true, signal: 'weak' };
-  return { mismatch: false, signal: 'none' };
-}
 
 // ============================================================================
 // PASS 1: IDENTIFY URLS - WITH COST TRACKING
@@ -697,34 +530,6 @@ export async function enrichDomain(
 ): Promise<EnrichmentResult> {
   const resultWithCost = await enrichDomainWithCost(domain, searchModel, analysisModel, firecrawlApiKey);
   return resultWithCost;
-}
-
-// Categorize URLs by priority for smart scraping
-function categorizeUrls(urls: string[], domain: string): { tier1: string[]; tier2: string[]; tier3: string[] } {
-  const tier1: string[] = []; // Essential: company site, LinkedIn
-  const tier2: string[] = []; // High value: ZoomInfo, Crunchbase (revenue/size data)
-  const tier3: string[] = []; // Low value: Wikipedia, Glassdoor, Indeed, etc.
-  
-  for (const url of urls) {
-    const urlLower = url.toLowerCase();
-    
-    // Tier 1: Company website and LinkedIn
-    if (urlLower.includes(domain.replace('www.', '')) || urlLower.includes('linkedin.com/company')) {
-      tier1.push(url);
-    }
-    // Tier 2: Data aggregators with revenue/employee data
-    else if (urlLower.includes('zoominfo.com') || urlLower.includes('crunchbase.com') || 
-             urlLower.includes('owler.com') || urlLower.includes('growjo.com') ||
-             urlLower.includes('cbinsights.com')) {
-      tier2.push(url);
-    }
-    // Tier 3: Everything else (Wikipedia, Glassdoor, Indeed, etc.)
-    else {
-      tier3.push(url);
-    }
-  }
-  
-  return { tier1, tier2, tier3 };
 }
 
 export async function enrichDomainWithCost(

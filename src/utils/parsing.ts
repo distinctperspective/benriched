@@ -16,9 +16,12 @@ export function parseRevenueAmountToUsd(raw: string): number | null {
   if (!Number.isFinite(base)) return null;
 
   let multiplier = 1;
-  if (/(billion|\bbn\b)/.test(cleaned)) multiplier = 1_000_000_000;
-  else if (/(million|\bm\b)/.test(cleaned)) multiplier = 1_000_000;
-  else if (/(thousand|\bk\b)/.test(cleaned)) multiplier = 1_000;
+  // Match billion/bn/b (b can follow a digit like "4.3b")
+  if (/billion|bn|(\d)b($|[^a-z])/i.test(cleaned)) multiplier = 1_000_000_000;
+  // Match million/mn/m (m can follow a digit like "42m")
+  else if (/million|mn|(\d)m($|[^a-z])/i.test(cleaned)) multiplier = 1_000_000;
+  // Match thousand/k (k can follow a digit like "500k")
+  else if (/thousand|(\d)k($|[^a-z])/i.test(cleaned)) multiplier = 1_000;
 
   let value = base * multiplier;
   
