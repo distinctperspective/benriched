@@ -179,11 +179,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         companyData.hs_company_id = companyId;
       }
       
-      const { data: savedCompany } = await supabase
+      const { data: savedCompany, error: upsertError } = await supabase
         .from('companies')
         .upsert(companyData, { onConflict: 'domain' })
         .select()
         .single();
+      
+      if (upsertError) {
+        console.error('[Upsert Error]', upsertError);
+        throw new Error(`Failed to upsert company: ${upsertError.message}`);
+      }
 
       // Log the request (always, even without hs_company_id)
       // Determine request type: force_refresh, retry (existed but re-enriching), or new_enrichment
