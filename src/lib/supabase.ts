@@ -91,11 +91,41 @@ export async function saveCompany(company: CompanyRecord): Promise<{ data: Compa
 }
 
 export async function getCompanyByDomain(domain: string): Promise<{ data: CompanyRecord | null; error: any }> {
+  // Normalize domain - strip www. prefix if present
+  const normalizedDomain = domain.replace(/^www\./, '');
+  
+  // Try normalized domain first
   const { data, error } = await supabase
     .from('companies')
     .select('*')
-    .eq('domain', domain)
+    .eq('domain', normalizedDomain)
     .single();
+  
+  // If not found and original had www., also try with www. prefix
+  if (!data && domain.startsWith('www.')) {
+    const { data: wwwData, error: wwwError } = await supabase
+      .from('companies')
+      .select('*')
+      .eq('domain', domain)
+      .single();
+    
+    if (wwwData) {
+      return { data: wwwData, error: wwwError };
+    }
+  }
+  
+  // If not found and original didn't have www., try with www. prefix
+  if (!data && !domain.startsWith('www.')) {
+    const { data: wwwData, error: wwwError } = await supabase
+      .from('companies')
+      .select('*')
+      .eq('domain', `www.${domain}`)
+      .single();
+    
+    if (wwwData) {
+      return { data: wwwData, error: wwwError };
+    }
+  }
   
   return { data, error };
 }
