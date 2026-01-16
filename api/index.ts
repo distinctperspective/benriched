@@ -169,7 +169,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         target_icp_matches: result.target_icp_matches || [],
         source_urls: result.source_urls || [],
         quality: result.quality,
-        enrichment_cost: result.cost,
         performance_metrics: result.performance,
         raw_api_responses: result.raw_api_responses,
       };
