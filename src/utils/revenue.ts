@@ -24,16 +24,29 @@ export function pickRevenueBandFromEvidence(
   const min = Math.min(...values);
   const max = Math.max(...values);
   
-  // If sources conflict significantly, use the HIGHEST figure
-  // Business directories (ZoomInfo, etc.) tend to underestimate private company revenue
-  if (min > 0 && max / min > 5) {
-    const highest = parsed.reduce((a, b) => ((a.usd as number) > (b.usd as number) ? a : b));
-    const band = highest.usd ? mapUsdToRevenueBand(highest.usd) : null;
+  // If sources conflict significantly (>5x spread), filter outliers
+  if (min > 0 && max / min > 5 && parsed.length >= 3) {
+    // Remove extreme outliers (bottom 20% and top 20% if we have enough data)
+    const sortedByUsd = [...parsed].sort((a, b) => (a.usd as number) - (b.usd as number));
+    const trimCount = parsed.length >= 5 ? 1 : 0;
+    const trimmed = sortedByUsd.slice(trimCount, sortedByUsd.length - trimCount);
+    
+    // From remaining, prefer: specific amounts > ranges, higher values (directories underestimate)
+    const best = trimmed.reduce((a, b) => {
+      // Prefer non-range amounts (no "-" or "to" in original)
+      const aIsRange = /[-–]|to/i.test(a.amount);
+      const bIsRange = /[-–]|to/i.test(b.amount);
+      if (aIsRange !== bIsRange) return aIsRange ? b : a;
+      // Otherwise prefer higher (directories underestimate private companies)
+      return (a.usd as number) > (b.usd as number) ? a : b;
+    });
+    
+    const band = best.usd ? mapUsdToRevenueBand(best.usd) : null;
     if (band) {
       return {
         band,
         confidence: 'medium',
-        reasoning: `Revenue sources conflict (${min.toLocaleString()} to ${max.toLocaleString()}). Using highest figure: ${highest.amount} (${highest.source}) → ${band}`,
+        reasoning: `Revenue sources conflict (${min.toLocaleString()} to ${max.toLocaleString()}). Using best non-outlier: ${best.amount} (${best.source}) → ${band}`,
       };
     }
   }

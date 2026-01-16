@@ -1,5 +1,11 @@
 import { supabase } from './supabase.js';
 
+export interface RawApiResponses {
+  pass1?: string;
+  pass2?: string;
+  deepResearch?: string;
+}
+
 export interface EnrichmentRequestRecord {
   id?: string;
   hs_company_id: string;
@@ -9,6 +15,7 @@ export interface EnrichmentRequestRecord {
   was_cached: boolean;
   cost_usd?: number | null;
   response_time_ms?: number | null;
+  raw_api_responses?: RawApiResponses | null;
   created_at?: string;
 }
 

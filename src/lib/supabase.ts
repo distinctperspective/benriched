@@ -27,6 +27,12 @@ export interface CompanyRecord {
   quality: Record<string, any>;
   enrichment_cost: Record<string, any>;
   performance_metrics: Record<string, any>;
+  // Parent company linking
+  parent_company_id?: string | null;
+  parent_company_name?: string | null;
+  parent_company_domain?: string | null;
+  inherited_revenue?: boolean;
+  inherited_size?: boolean;
   created_at?: string;
   updated_at?: string;
   last_enriched_at?: string;

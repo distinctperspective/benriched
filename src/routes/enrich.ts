@@ -107,6 +107,11 @@ app.post('/', async (c) => {
       quality: result.quality,
       enrichment_cost: result.cost,
       performance_metrics: result.performance,
+      // Parent company linking
+      parent_company_name: result.parent_company_name || null,
+      parent_company_domain: result.parent_company_domain || null,
+      inherited_revenue: result.inherited_revenue || false,
+      inherited_size: result.inherited_size || false,
     };
 
     const { data: savedCompany, error: saveError } = await saveCompany(companyRecord);
@@ -128,6 +133,7 @@ app.post('/', async (c) => {
         was_cached: false,
         cost_usd: result.cost.total.costUsd,
         response_time_ms: responseTimeMs,
+        raw_api_responses: result.raw_api_responses || null,
       };
       const { error: requestError } = await saveEnrichmentRequest(requestRecord);
       if (requestError) {

@@ -1,521 +1,114 @@
-import { generateText } from 'ai';
 import { EnrichmentResult, EnrichmentResultWithCost, Pass1Result, NAICSCode, TargetICPMatch, RevenueEvidence, AIUsage, CostBreakdown, PerformanceMetrics, DiagnosticInfo } from '../types.js';
 import { scrapeUrl, scrapeMultipleUrls, scrapeMultipleUrlsWithCost, calculateFirecrawlCost } from '../scraper.js';
 import { pickRevenueBandFromEvidence, estimateRevenueBandFromEmployeesAndNaics, estimateFromIndustryAverages, validateRevenueVsEmployees, estimateEmployeeBandFromRevenue } from '../utils/revenue.js';
 import { parseRevenueAmountToUsd, parseEmployeeBandLowerBound, countryNameToCode } from '../utils/parsing.js';
 import { detectOutliers, shouldTriggerDeepResearch, runDeepResearch, DeepResearchResult } from './deepResearch.js';
+import { getCompanyByDomain } from '../lib/supabase.js';
 
 // Import from components
-import { calculateAICost, AI_PRICING } from './components/pricing.js';
-import { mapEmployeeCountToBand, employeeCountToBand } from './components/employees.js';
+import { calculateAICost } from './components/pricing.js';
+import { mapEmployeeCountToBand } from './components/employees.js';
 import { validateLinkedInPage } from './components/linkedin.js';
 import { detectEntityMismatch } from './components/entityDetection.js';
 import { categorizeUrls } from './components/urlCategorization.js';
+import { pass1_identifyUrlsWithUsage, pass1_identifyUrlsStrict, type Pass1WithUsage } from './components/pass1.js';
+import { pass2_analyzeContentWithUsage, type Pass2WithUsage } from './components/pass2.js';
+import { TARGET_ICP_NAICS, VALID_REVENUE_BANDS, PASSING_REVENUE_BANDS, TARGET_REGIONS, getMatchingNaics } from './components/icp.js';
 
-// Re-export calculateAICost for external use
+// Re-export for external use
 export { calculateAICost };
+export { pass1_identifyUrlsWithUsage as pass1_identifyUrls } from './components/pass1.js';
+export { pass2_analyzeContentWithUsage as pass2_analyzeContent } from './components/pass2.js';
 
 // ============================================================================
-// PASS 1 PROMPT - EXACT COPY FROM TEST SCRIPT
+// PARENT COMPANY DOMAIN GUESSING
 // ============================================================================
 
-const PASS1_PROMPT = `What is this company's annual revenue and how many employees do they have?
+const KNOWN_PARENT_DOMAINS: Record<string, string> = {
+  'general mills': 'generalmills.com',
+  'lactalis': 'lactalis.com',
+  'lactalis usa': 'lactalisusa.com',
+  'nestle': 'nestle.com',
+  'kraft heinz': 'kraftheinzcompany.com',
+  'pepsico': 'pepsico.com',
+  'coca-cola': 'coca-colacompany.com',
+  'the coca-cola company': 'coca-colacompany.com',
+  'unilever': 'unilever.com',
+  'mondelez': 'mondelezinternational.com',
+  'tyson foods': 'tyson.com',
+  'jbs': 'jbs.com.br',
+  'cargill': 'cargill.com',
+  'archer daniels midland': 'adm.com',
+  'adm': 'adm.com',
+  'conagra': 'conagrabrands.com',
+  'conagra brands': 'conagrabrands.com',
+  'hormel': 'hormelfoods.com',
+  'hormel foods': 'hormelfoods.com',
+  'smithfield': 'smithfieldfoods.com',
+  'smithfield foods': 'smithfieldfoods.com',
+  'premium brands': 'premiumbrandsholdings.com',
+  'premium brands holdings': 'premiumbrandsholdings.com',
+  'premium brands holdings corporation': 'premiumbrandsholdings.com',
+  'maple leaf foods': 'mapleleaffoods.com',
+  'saputo': 'saputo.com',
+  'danone': 'danone.com',
+  'kellogg': 'kelloggcompany.com',
+  "kellogg's": 'kelloggcompany.com',
+  'post holdings': 'postholdings.com',
+  'treehouse foods': 'treehousefoods.com',
+  'b&g foods': 'bgfoods.com',
+  'campbell soup': 'campbellsoupcompany.com',
+  "campbell's": 'campbellsoupcompany.com',
+  'smucker': 'jmsmucker.com',
+  'j.m. smucker': 'jmsmucker.com',
+  'the j.m. smucker company': 'jmsmucker.com',
+  'hershey': 'thehersheycompany.com',
+  'the hershey company': 'thehersheycompany.com',
+  'mars': 'mars.com',
+  'ferrero': 'ferrero.com',
+  'lindt': 'lindt-spruengli.com',
+  'blue diamond growers': 'bluediamond.com',
+  'ocean spray': 'oceanspray.com',
+  'land o lakes': 'landolakesinc.com',
+  "land o'lakes": 'landolakesinc.com',
+  'dairy farmers of america': 'dfamilk.com',
+  'dean foods': 'deanfoods.com',
+  'schreiber foods': 'schreiberfoods.com',
+  'leprino foods': 'leprinofoods.com',
+  'tillamook': 'tillamook.com',
+  'celerian group': 'celeriangroup.com',
+};
 
-Search their website, Forbes, press releases, news articles, and SEC filings for revenue.
-Check LinkedIn and their website for employee count.
-For PUBLIC companies, check SEC 10-K filings.
-Mark ZoomInfo/Growjo/Owler figures as estimates.
-
-After finding the data, format as JSON:
-{
-  "company_name": "Company Name",
-  "parent_company": "Parent company if subsidiary, otherwise null",
-  "headquarters": {"city": "City", "state": "State", "country": "Country", "country_code": "US"},
-  "urls_to_crawl": ["https://company.com", "https://linkedin.com/company/..."],
-  "revenue_found": [
-    {"amount": "$1.4 billion", "source": "company website", "year": "2024", "is_estimate": false}
-  ],
-  "employee_count_found": {"amount": "4,000", "source": "LinkedIn"}
-}
-
-Return ALL revenue figures found. Return ONLY valid JSON.`;
-
-// ============================================================================
-// PASS 2 PROMPT - EXACT COPY FROM TEST SCRIPT
-// ============================================================================
-
-const PASS2_PROMPT = `You are a data extraction specialist. Analyze the provided scraped web content and extract structured company information.
-
-Extract the following fields:
-- **business_description**: 2-4 sentence comprehensive description of what the company does, including: primary products/services, target markets/customers, key differentiators or unique value proposition, and business model if relevant
-- **city**: Main office or HQ city
-- **state**: For US companies, full state name (e.g., "Massachusetts", "California"); for non-US, main region or null
-- **hq_country**: 2-letter ISO country code (e.g., "US", "CA", "DE")
-- **is_us_hq**: Boolean - true if global HQ is in the United States
-- **is_us_subsidiary**: Boolean - true if this company has US operations/subsidiary (even if HQ is outside US). Examples: Solina (France HQ) has Solina USA, Ajinomoto (Japan HQ) has Ajinomoto Foods North America
-- **linkedin_url**: Official LinkedIn company page URL (null if not found)
-- **company_revenue**: Annual revenue using ONLY these exact bands:
-  "0-500K", "500K-1M", "1M-5M", "5M-10M", "10M-25M", "25M-75M", 
-  "75M-200M", "200M-500M", "500M-1B", "1B-10B", "10B-100B", "100B-1T"
-  (null if not found)
+function guessParentDomain(parentName: string): string | null {
+  if (!parentName) return null;
   
-  **CRITICAL FOR REVENUE - Show your work:** 
-  - Extract ALL revenue figures you find in the content with source and year
-  - Normalize amounts to USD (e.g., "$42M" = 42,000,000)
-  - Prioritize: SEC filings > Press releases > Wikipedia > ZoomInfo/Crunchbase estimates
-  - If multiple figures exist, use the most recent and explicit one
-  - If conflicting figures differ by more than 5x, set company_revenue to null
-  - If only vague phrases like "multi-million" or "8-figure", choose the LOWEST compatible band
-  - If no explicit figure found, set company_revenue to null (do NOT estimate from employee count)
-  - Map your normalized amount to the appropriate band based on the range
-  - Example: $42M → "25M-75M" band
-- **company_size**: Employee count using ONLY these exact bands:
-  "0-1 Employees", "2-10 Employees", "11-50 Employees", "51-200 Employees", 
-  "201-500 Employees", "501-1,000 Employees", "1,001-5,000 Employees", 
-  "5,001-10,000 Employees", "10,001+ Employees"
+  const normalized = parentName.toLowerCase().trim();
   
-  **IMPORTANT FOR COMPANY SIZE:**
-  - Check Glassdoor and Indeed pages for employee count ranges
-  - Glassdoor shows "Company Size" field and employee reviews
-  - Indeed shows number of open jobs and company reviews
-  - LinkedIn shows employee count in the "About" section
-  - Cross-reference multiple sources for accuracy
-- **naics_codes_6_digit**: Array of up to 3 objects with code and description. Example:
-  [
-    {"code": "311991", "description": "Perishable Prepared Food Manufacturing"},
-    {"code": "424490", "description": "Other Grocery and Related Products Merchant Wholesalers"}
-  ]
-- **source_urls**: Array of URLs you used to extract information (include Glassdoor/Indeed if available)
-- **quality**: Object containing confidence and reasoning for four key data points:
-  - location: confidence and reasoning for city/state/country
-  - revenue: confidence and reasoning for revenue band selection
-  - size: confidence and reasoning for company size band selection
-  - industry: confidence and reasoning for NAICS code selection
-
-Return ONLY valid JSON with revenue evidence shown in reasoning:
-{
-  "business_description": "...",
-  "city": "San Francisco",
-  "state": "California",
-  "hq_country": "US",
-  "is_us_hq": true,
-  "is_us_subsidiary": false,
-  "linkedin_url": "https://www.linkedin.com/company/xxx/",
-  "company_revenue": "10B-100B",
-  "company_size": "51-200 Employees",
-  "naics_codes_6_digit": [
-    {"code": "311991", "description": "Perishable Prepared Food Manufacturing"},
-    {"code": "424490", "description": "Other Grocery and Related Products Merchant Wholesalers"}
-  ],
-  "source_urls": ["https://...", "https://..."],
-  "quality": {
-    "location": {"confidence": "high", "reasoning": "Found on company website About page"},
-    "revenue": {"confidence": "high", "reasoning": "Found explicit revenue of $42M in 2023 press release, maps to 25M-75M band"},
-    "size": {"confidence": "high", "reasoning": "Confirmed from Indeed and Glassdoor employee counts"},
-    "industry": {"confidence": "high", "reasoning": "NAICS codes determined from company's primary business activities"}
+  // Check known mappings first
+  if (KNOWN_PARENT_DOMAINS[normalized]) {
+    return KNOWN_PARENT_DOMAINS[normalized];
   }
-}
-
-IMPORTANT:
-- Only include LinkedIn URL if you actually found it in the scraped content
-- Determine NAICS codes based on what the company actually does
-- Return null for fields not found, not "unknown"
-- Include all URLs you used to extract information in source_urls`;
-
-// ============================================================================
-// PASS 1: IDENTIFY URLS - WITH COST TRACKING
-// ============================================================================
-
-interface Pass1WithUsage {
-  result: Pass1Result;
-  usage: AIUsage;
-  rawResponse?: string;
-}
-
-export async function pass1_identifyUrls(domain: string, model: any, modelId: string = 'perplexity/sonar-pro'): Promise<Pass1Result> {
-  const { result } = await pass1_identifyUrlsWithUsage(domain, model, modelId);
-  return result;
-}
-
-export async function pass1_identifyUrlsWithUsage(domain: string, model: any, modelId: string = 'perplexity/sonar-pro'): Promise<Pass1WithUsage> {
-  console.log(`\n📋 Pass 1: Identifying URLs to crawl...`);
   
-  const { text, usage } = await generateText({
-    model,
-    prompt: `What is the annual revenue and employee count for the company at ${domain}?
-
-IMPORTANT: Find data for the SPECIFIC company at this domain, NOT its parent company.
-If this is a subsidiary (e.g., "Company Name North America"), find THAT subsidiary's revenue and employees, not the global parent's figures.
-
-Search their website, Forbes, press releases, and news articles for revenue figures.
-Check LinkedIn and company website for employee count.
-For PUBLIC companies, check SEC 10-K filings.
-Mark ZoomInfo/Growjo/Owler figures as estimates - they're often inaccurate.
-
-After finding the data, format as JSON:
-{
-  "company_name": "Full Company Name (e.g., Ajinomoto Foods North America, not just Ajinomoto)",
-  "parent_company": "Parent company name if this is a subsidiary, otherwise null",
-  "headquarters": {"city": "City", "state": "State", "country": "Country", "country_code": "US"},
-  "urls_to_crawl": ["https://company.com", "https://linkedin.com/company/..."],
-  "revenue_found": [
-    {"amount": "$500 million", "source": "company website", "year": "2024", "is_estimate": false}
-  ],
-  "employee_count_found": {"amount": "2,500", "source": "LinkedIn"}
-}
-
-Return ALL revenue figures found with sources. Return ONLY valid JSON.`,
-    temperature: 0.1,
-  });
-  
-  const inputTokens = usage?.inputTokens || 0;
-  const outputTokens = usage?.outputTokens || 0;
-  const totalTokens = usage?.totalTokens || (inputTokens + outputTokens);
-  const costUsd = calculateAICost(modelId, inputTokens, outputTokens);
-  
-  const aiUsage: AIUsage = {
-    model: modelId,
-    inputTokens,
-    outputTokens,
-    totalTokens,
-    costUsd
-  };
-  
-  console.log(`   🔢 Tokens: ${inputTokens} in / ${outputTokens} out = ${totalTokens} total ($${costUsd.toFixed(4)})`);
-  
-  try {
-    const cleanText = text.trim().replace(/^```json?\n?/i, '').replace(/\n?```$/i, '');
-    const result = JSON.parse(cleanText);
-    console.log(`   ✅ Found ${result.urls_to_crawl?.length || 0} URLs to crawl`);
-    
-    if (result.headquarters?.country_code) {
-      console.log(`   🌍 HQ found: ${result.headquarters.city || ''}, ${result.headquarters.country_code}`);
+  // Try partial matches
+  for (const [key, domain] of Object.entries(KNOWN_PARENT_DOMAINS)) {
+    if (normalized.includes(key) || key.includes(normalized)) {
+      return domain;
     }
-    if (Array.isArray(result.revenue_found) && result.revenue_found.length > 0) {
-      const first = result.revenue_found[0];
-      console.log(`   💰 Revenue found: ${first.amount} (source: ${first.source}${first.year ? `, ${first.year}` : ''})`);
-    }
-    if (result.employee_count_found?.amount) {
-      console.log(`   👥 Employees found: ${result.employee_count_found.amount} (source: ${result.employee_count_found.source})`);
-    }
-    if (result.parent_company) {
-      console.log(`   🏢 Parent company: ${result.parent_company}`);
-    }
-    
-    return { result, usage: aiUsage, rawResponse: text };
-  } catch {
-    return {
-      result: {
-        company_name: domain.replace(/\.(com|io|co|org|net)$/, ''),
-        urls_to_crawl: [`https://${domain}`, `https://${domain}/about`, `https://${domain}/contact`],
-        search_queries: [`${domain} company headquarters`, `${domain} company revenue employees`]
-      },
-      usage: aiUsage,
-      rawResponse: text
-    };
-  }
-}
-
-export async function pass1_identifyUrlsStrict(domain: string, model: any, previousCompanyName: string): Promise<Pass1Result> {
-  console.log(`\n📋 Pass 1 (strict): Re-validating company identity...`);
-
-  const { text } = await generateText({
-    model,
-    system: PASS1_PROMPT,
-    prompt: `Research the company at domain: ${domain}
-
-IMPORTANT:
-- A previous attempt identified the company as: ${previousCompanyName}
-- You MUST confirm the company name from the actual website content of ${domain} (homepage/footer/about)
-- If the website clearly indicates a different company name, use the website-indicated name
-
-REQUIRED STEPS:
-1. Use site:${domain} searches for "about", "contact", "copyright", and the company name shown on the site
-2. Only then search revenue for the confirmed company name
-3. Return the JSON with company info, URLs, and any revenue/employee data found.
-`,
-    temperature: 0.1,
-  });
-
-  try {
-    const cleanText = text.trim().replace(/^```json?\n?/i, '').replace(/\n?```$/i, '');
-    return JSON.parse(cleanText);
-  } catch {
-    return {
-      company_name: domain.replace(/\.(com|io|co|org|net)$/, ''),
-      urls_to_crawl: [`https://${domain}`, `https://${domain}/about`, `https://${domain}/contact`],
-      search_queries: [`site:${domain} about`, `site:${domain} contact`, `${domain} company revenue employees`],
-      revenue_found: [],
-    };
-  }
-}
-
-// ============================================================================
-// PASS 2: ANALYZE CONTENT - WITH COST TRACKING
-// ============================================================================
-
-interface Pass2WithUsage {
-  result: EnrichmentResult;
-  usage: AIUsage;
-  rawResponse?: string;
-}
-
-export async function pass2_analyzeContent(
-  domain: string, 
-  companyName: string,
-  scrapedContent: Map<string, string>, 
-  model: any,
-  pass1Data?: Pass1Result,
-  modelId: string = 'openai/gpt-4o-mini'
-): Promise<EnrichmentResult> {
-  const { result } = await pass2_analyzeContentWithUsage(domain, companyName, scrapedContent, model, pass1Data, modelId);
-  return result;
-}
-
-export async function pass2_analyzeContentWithUsage(
-  domain: string, 
-  companyName: string,
-  scrapedContent: Map<string, string>, 
-  model: any,
-  pass1Data?: Pass1Result,
-  modelId: string = 'openai/gpt-4o-mini'
-): Promise<Pass2WithUsage> {
-  console.log(`\n🔬 Pass 2: Analyzing scraped content...`);
-  
-  const allScrapedText = Array.from(scrapedContent.values()).join(' ').toLowerCase();
-  const companyNameLower = companyName.toLowerCase();
-  const domainBase = domain.replace('www.', '').split('.')[0].toLowerCase();
-  
-  const companyNameFound = allScrapedText.includes(companyNameLower);
-  const domainNameFound = allScrapedText.includes(domainBase);
-  
-  if (!companyNameFound && domainNameFound) {
-    console.log(`\n⚠️  Company name validation WARNING:`);
-    console.log(`   - Pass 1 identified: "${companyName}"`);
-    console.log(`   - But "${companyName}" NOT found in scraped website content`);
-    console.log(`   - Domain name "${domainBase}" IS found in content`);
-    console.log(`   - This suggests Pass 1 may have misidentified the company`);
   }
   
-  let context = `Company: ${companyName}\nDomain: ${domain}\n`;
+  // Generate a guess from the company name
+  // Remove common suffixes and create a domain
+  const cleaned = normalized
+    .replace(/\s*(inc\.?|llc|ltd\.?|corp\.?|corporation|company|co\.?|holdings?|group|enterprises?)\s*$/gi, '')
+    .replace(/[^a-z0-9\s]/g, '')
+    .trim()
+    .replace(/\s+/g, '');
   
-  if (pass1Data?.headquarters?.country_code) {
-    context += `**HEADQUARTERS found during web search:** ${pass1Data.headquarters.city || ''}, ${pass1Data.headquarters.state || ''}, ${pass1Data.headquarters.country || ''} (${pass1Data.headquarters.country_code})\n`;
-  }
-  if (pass1Data?.parent_company) {
-    context += `Parent Company: ${pass1Data.parent_company}\n`;
-  }
-  if (pass1Data?.revenue_found && Array.isArray(pass1Data.revenue_found) && pass1Data.revenue_found.length > 0) {
-    context += `**IMPORTANT - Revenue figures found during web search:**\n`;
-    pass1Data.revenue_found.forEach((rev: RevenueEvidence, idx: number) => {
-      context += `  ${idx + 1}. ${rev.amount} (${rev.year}, Source: ${rev.source}${rev.is_estimate ? ', estimate' : ''})\n`;
-    });
-  }
-  if (pass1Data?.employee_count_found?.amount) {
-    context += `**Employee count found during web search:** ${pass1Data.employee_count_found.amount} (Source: ${pass1Data.employee_count_found.source})\n`;
+  if (cleaned.length >= 3) {
+    return `${cleaned}.com`;
   }
   
-  context += `\n=== SCRAPED CONTENT ===\n\n`;
-  
-  for (const [url, content] of scrapedContent) {
-    const truncated = content.slice(0, 5000);
-    context += `--- ${url} ---\n${truncated}\n\n`;
-  }
-  
-  const { text, usage } = await generateText({
-    model,
-    system: PASS2_PROMPT,
-    prompt: context,
-    temperature: 0.1,
-  });
-  
-  const inputTokens = usage?.inputTokens || 0;
-  const outputTokens = usage?.outputTokens || 0;
-  const totalTokens = usage?.totalTokens || (inputTokens + outputTokens);
-  const costUsd = calculateAICost(modelId, inputTokens, outputTokens);
-  
-  const aiUsage: AIUsage = {
-    model: modelId,
-    inputTokens,
-    outputTokens,
-    totalTokens,
-    costUsd
-  };
-  
-  console.log(`   🔢 Tokens: ${inputTokens} in / ${outputTokens} out = ${totalTokens} total ($${costUsd.toFixed(4)})`);
-  
-  
-  try {
-    const cleanText = text.trim().replace(/^```json?\n?/i, '').replace(/\n?```$/i, '');
-    const parsed = JSON.parse(cleanText);
-    
-    let naicsCodes: NAICSCode[] = [];
-    if (parsed.naics_codes_6_digit) {
-      if (Array.isArray(parsed.naics_codes_6_digit)) {
-        naicsCodes = parsed.naics_codes_6_digit.map((item: any) => {
-          if (typeof item === 'string') {
-            return { code: item, description: 'Unknown' };
-          }
-          return { code: item.code || '', description: item.description || 'Unknown' };
-        });
-      }
-    }
-    
-    const targetIcpNaics = new Set([
-      '111219', '111333', '111334', '111339', '111998', '112120', '112210', '112310', '112320', '112330', '112340', '112390',
-      '115114', '311111', '311119', '311211', '311212', '311213', '311221', '311224', '311225', '311230', '311313', '311314',
-      '311340', '311351', '311352', '311411', '311412', '311421', '311422', '311423', '311511', '311512', '311513', '311514',
-      '311520', '311611', '311612', '311613', '311615', '311710', '311811', '311812', '311813', '311821', '311824', '311830',
-      '311911', '311919', '311920', '311930', '311941', '311942', '311991', '311999', '312111', '312112', '312120', '312130',
-      '312140', '424410', '424420', '424430', '424440', '424450', '424460', '424470', '424480', '424490', '424510', '424590',
-      '445110', '445131', '493120'
-    ]);
-    
-    const targetIcpMatches: TargetICPMatch[] = naicsCodes.filter(naics => targetIcpNaics.has(naics.code));
-    // Target ICP requires: matching NAICS codes AND target region (US, Mexico, Canada, Puerto Rico, or US subsidiary) AND revenue > $10M
-    const targetRegions = new Set(['US', 'MX', 'CA', 'PR']);
-    const isTargetRegion = targetRegions.has(parsed.hq_country) || parsed.is_us_hq || parsed.is_us_subsidiary;
-    // Revenue bands that PASS (above $10M): 10M-25M, 25M-75M, 75M-200M, 200M-500M, 500M-1B, 1B-10B, 10B-100B, 100B-1T
-    const passingRevenueBands = new Set(['10M-25M', '25M-75M', '75M-200M', '200M-500M', '500M-1B', '1B-10B', '10B-100B', '100B-1T']);
-    const hasPassingRevenue = parsed.company_revenue && passingRevenueBands.has(parsed.company_revenue);
-    const targetIcp = targetIcpMatches.length > 0 && isTargetRegion && hasPassingRevenue;
-    
-    // Valid revenue bands - reject any AI hallucinated bands
-    const VALID_REVENUE_BANDS = new Set([
-      '0-500K', '500K-1M', '1M-5M', '5M-10M', '10M-25M', '25M-75M',
-      '75M-200M', '200M-500M', '500M-1B', '1B-10B', '10B-100B', '100B-1T'
-    ]);
-    
-    let finalRevenue = parsed.company_revenue || null;
-    
-    // Validate that the revenue band is one of our valid options
-    if (finalRevenue && !VALID_REVENUE_BANDS.has(finalRevenue)) {
-      console.log(`   ⚠️  Invalid revenue band "${finalRevenue}" - AI hallucinated a band, nulling`);
-      finalRevenue = null;
-      if (parsed.quality?.revenue) {
-        parsed.quality.revenue.confidence = 'low';
-        parsed.quality.revenue.reasoning = `Invalid revenue band "${parsed.company_revenue}" returned by AI - not in valid list`;
-      }
-    }
-    
-    if (finalRevenue && parsed.quality?.revenue?.reasoning) {
-      const revenueReasoning = parsed.quality.revenue.reasoning.toLowerCase();
-      const hasEvidence = /\$|million|billion|thousand|zoominfo|press release|annual report|sec filing|crunchbase|owler|growjo/.test(revenueReasoning);
-      if (!hasEvidence) {
-        finalRevenue = null;
-        if (parsed.quality?.revenue) {
-          parsed.quality.revenue.confidence = 'low';
-          parsed.quality.revenue.reasoning = 'Revenue band selected without explicit evidence - nulled for accuracy';
-        }
-      }
-    }
-    
-    let finalSize = parsed.company_size || 'unknown';
-    // Prefer Pass 1 employee data if available and Pass 2 returned unknown or a very small band
-    const pass1EmployeeData = pass1Data?.employee_count_found;
-    // Handle both array and single object formats
-    const pass1EmployeeList = Array.isArray(pass1EmployeeData) ? pass1EmployeeData : (pass1EmployeeData ? [pass1EmployeeData] : []);
-    
-    if (pass1EmployeeList.length > 0) {
-      // Find the highest employee count from Pass 1 sources
-      let maxCount = 0;
-      for (const emp of pass1EmployeeList) {
-        const amountStr = String(emp.amount || '').toLowerCase().replace(/,/g, '');
-        const numMatch = amountStr.match(/(\d+)/);
-        if (numMatch) {
-          const count = parseInt(numMatch[1], 10);
-          // Handle "1K" format
-          if (amountStr.includes('k') && count < 100) {
-            maxCount = Math.max(maxCount, count * 1000);
-          } else {
-            maxCount = Math.max(maxCount, count);
-          }
-        }
-      }
-      
-      // If Pass 2 returned a small band but Pass 1 found a larger count, use Pass 1
-      const pass2IsSmall = finalSize === 'unknown' || finalSize === '0-1 Employees' || finalSize === '2-10 Employees' || finalSize === '11-50 Employees';
-      if (pass2IsSmall && maxCount > 100) {
-        if (maxCount > 10000) finalSize = '10,001+ Employees';
-        else if (maxCount > 5000) finalSize = '5,001-10,000 Employees';
-        else if (maxCount > 1000) finalSize = '1,001-5,000 Employees';
-        else if (maxCount > 500) finalSize = '501-1,000 Employees';
-        else if (maxCount > 200) finalSize = '201-500 Employees';
-        else if (maxCount > 50) finalSize = '51-200 Employees';
-      }
-    }
-    
-    // Don't use raw Pass 1 revenue here - let the fallback logic handle it with proper band mapping
-    
-    // Build diagnostics from Pass 1 data
-    const diagnostics: DiagnosticInfo = {
-      revenue_sources_found: Array.isArray(pass1Data?.revenue_found) ? pass1Data.revenue_found : [],
-      employee_sources_found: pass1Data?.employee_count_found || null,
-    };
-
-    const result: EnrichmentResult = {
-      company_name: companyName,
-      website: `https://${domain}`,
-      domain: domain,
-      linkedin_url: parsed.linkedin_url || null,
-      business_description: parsed.business_description || 'unknown',
-      company_size: finalSize,
-      company_revenue: finalRevenue,
-      naics_codes_6_digit: naicsCodes,
-      naics_codes_csv: naicsCodes.map(n => n.code).join(','),
-      city: parsed.city || 'unknown',
-      state: parsed.state || null,
-      hq_country: countryNameToCode(parsed.hq_country) || 'unknown',
-      is_us_hq: parsed.is_us_hq || false,
-      is_us_subsidiary: parsed.is_us_subsidiary || false,
-      source_urls: parsed.source_urls || [],
-      quality: parsed.quality || {
-        location: { confidence: 'low', reasoning: 'Could not determine location' },
-        revenue: { confidence: 'low', reasoning: 'Could not determine revenue' },
-        size: { confidence: 'low', reasoning: 'Could not determine company size' },
-        industry: { confidence: 'low', reasoning: 'Could not determine industry' }
-      },
-      target_icp: targetIcp,
-      target_icp_matches: targetIcpMatches,
-      revenue_pass: finalRevenue ? passingRevenueBands.has(finalRevenue) : false,
-      industry_pass: targetIcpMatches.length > 0,
-      diagnostics
-    };
-    
-    return { result, usage: aiUsage, rawResponse: text };
-  } catch {
-    return {
-      result: {
-        company_name: companyName,
-        website: `https://${domain}`,
-        domain: domain,
-        linkedin_url: null,
-        business_description: 'unknown',
-        company_size: 'unknown',
-        company_revenue: null,
-        naics_codes_6_digit: [],
-        naics_codes_csv: '',
-        city: 'unknown',
-        state: null,
-        hq_country: 'unknown',
-        is_us_hq: false,
-        is_us_subsidiary: false,
-        source_urls: [],
-        quality: {
-          location: { confidence: 'low', reasoning: 'Could not parse structured response' },
-          revenue: { confidence: 'low', reasoning: 'Could not parse structured response' },
-          size: { confidence: 'low', reasoning: 'Could not parse structured response' },
-          industry: { confidence: 'low', reasoning: 'Could not parse structured response' }
-        },
-        target_icp: false,
-        target_icp_matches: [],
-        revenue_pass: false,
-        industry_pass: false
-      },
-      usage: aiUsage,
-      rawResponse: text
-    };
-  }
+  return null;
 }
 
 // ============================================================================
@@ -669,14 +262,21 @@ export async function enrichDomainWithCost(
     console.log(`   📝 Company (strict): ${strictResult.company_name}`);
     console.log(`   🔗 URLs (strict): ${strictResult.urls_to_crawl.join(', ')}`);
     
-    // Merge: use strict result but preserve original data if strict didn't find any
+    // Merge: combine revenue evidence from both passes (original often has better data)
+    // Concatenate both arrays so pickRevenueBandFromEvidence can choose the best
+    const combinedRevenue = [
+      ...(originalRevenueFound || []),
+      ...(strictResult.revenue_found || [])
+    ].filter(r => r && r.amount);
+    
+    // Prefer strict headquarters only if it has actual city data, otherwise keep original
+    const strictHasHQ = strictResult.headquarters?.city && strictResult.headquarters.city !== 'unknown';
+    
     pass1Result = {
       ...strictResult,
-      revenue_found: (strictResult.revenue_found && strictResult.revenue_found.length > 0) 
-        ? strictResult.revenue_found 
-        : originalRevenueFound,
+      revenue_found: combinedRevenue.length > 0 ? combinedRevenue : originalRevenueFound,
       employee_count_found: strictResult.employee_count_found || originalEmployeeFound,
-      headquarters: strictResult.headquarters || originalHeadquarters,
+      headquarters: strictHasHQ ? strictResult.headquarters : originalHeadquarters,
     };
     
     console.log(`\n🔥 Re-scraping ${pass1Result.urls_to_crawl.length} URLs with Firecrawl...`);
@@ -953,10 +553,77 @@ export async function enrichDomainWithCost(
   
   // Recalculate target_icp with final revenue
   // Target regions: US, Mexico, Canada, Puerto Rico, or companies with US operations
-  const hasPassingRevenueFinal = result.company_revenue ? passingRevenueBandsForFinal.has(result.company_revenue) : false;
+  let hasPassingRevenueFinal = result.company_revenue ? passingRevenueBandsForFinal.has(result.company_revenue) : false;
   const targetRegionsFinal = new Set(['US', 'MX', 'CA', 'PR']);
   const isTargetRegionFinal = targetRegionsFinal.has(result.hq_country) || result.is_us_hq || result.is_us_subsidiary;
   result.target_icp = (result.target_icp_matches?.length > 0) && isTargetRegionFinal && hasPassingRevenueFinal;
+
+  // ============================================================================
+  // PARENT COMPANY ENRICHMENT - Inherit data from parent when child has no data
+  // ============================================================================
+  const parentCompanyName = pass1Result.parent_company;
+  const childHasWeakData = !result.company_revenue || !hasPassingRevenueFinal || 
+    result.company_size === 'unknown' || result.company_size === '0-1 Employees' || 
+    result.company_size === '2-10 Employees' || result.company_size === '11-50 Employees';
+  
+  if (parentCompanyName && childHasWeakData) {
+    console.log(`\n🏢 Parent company detected: ${parentCompanyName}`);
+    console.log(`   Child has weak data - attempting to enrich parent...`);
+    
+    // Try to find parent domain from common patterns
+    const parentDomain = guessParentDomain(parentCompanyName);
+    
+    if (parentDomain) {
+      // Check if parent already exists in DB
+      const { data: existingParent } = await getCompanyByDomain(parentDomain);
+      
+      if (existingParent && existingParent.company_revenue) {
+        console.log(`   ✅ Found parent in DB: ${existingParent.company_name} (${existingParent.company_revenue})`);
+        
+        // Inherit revenue if child doesn't have good data
+        if (!result.company_revenue || !hasPassingRevenueFinal) {
+          result.company_revenue = existingParent.company_revenue;
+          result.inherited_revenue = true;
+          result.quality.revenue = {
+            confidence: 'medium',
+            reasoning: `Inherited from parent company: ${existingParent.company_name}`
+          };
+          console.log(`   💰 Inherited revenue: ${existingParent.company_revenue}`);
+        }
+        
+        // Inherit size if child has small/unknown size (brands typically don't have separate employee counts)
+        const smallSizes = new Set(['unknown', '0-1 Employees', '2-10 Employees', '11-50 Employees', '51-200 Employees']);
+        if (smallSizes.has(result.company_size)) {
+          result.company_size = existingParent.company_size || result.company_size;
+          result.inherited_size = true;
+          result.quality.size = {
+            confidence: 'medium',
+            reasoning: `Inherited from parent company: ${existingParent.company_name}`
+          };
+          console.log(`   👥 Inherited size: ${existingParent.company_size}`);
+        }
+        
+        result.parent_company_name = existingParent.company_name;
+        result.parent_company_domain = parentDomain;
+        
+        // Recalculate ICP with inherited data
+        hasPassingRevenueFinal = result.company_revenue ? passingRevenueBandsForFinal.has(result.company_revenue) : false;
+        result.revenue_pass = hasPassingRevenueFinal;
+        result.target_icp = (result.target_icp_matches?.length > 0) && isTargetRegionFinal && hasPassingRevenueFinal;
+        
+        if (result.target_icp) {
+          console.log(`   🎯 ICP now PASSING with inherited data`);
+        }
+      } else {
+        console.log(`   ⚠️ Parent not in DB or has no revenue data. Consider enriching: ${parentDomain}`);
+        result.parent_company_name = parentCompanyName;
+        result.parent_company_domain = parentDomain;
+      }
+    } else {
+      console.log(`   ⚠️ Could not determine parent domain for: ${parentCompanyName}`);
+      result.parent_company_name = parentCompanyName;
+    }
+  }
 
   // Build cost breakdown
   const firecrawlCost = calculateFirecrawlCost(totalFirecrawlCredits);

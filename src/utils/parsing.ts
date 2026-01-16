@@ -9,19 +9,26 @@ export function parseRevenueAmountToUsd(raw: string): number | null {
   // Handle "less than" indicators - use a lower estimate
   const isLessThan = /^<|less than|under/.test(cleaned);
   
-  const match = cleaned.match(/([-+]?\d*\.?\d+)/);
+  // Handle range strings like "$500 million - $1 billion" - use the FIRST number with its unit
+  // Split on common range separators and parse the first part
+  const rangeSeparators = /\s*[-–—]\s*\$|\s+to\s+/;
+  const parts = cleaned.split(rangeSeparators);
+  const firstPart = parts[0].trim();
+  
+  const match = firstPart.match(/([-+]?\d*\.?\d+)/);
   if (!match) return null;
 
   const base = Number(match[1]);
   if (!Number.isFinite(base)) return null;
 
+  // Determine multiplier from the FIRST part only (not the whole string)
   let multiplier = 1;
   // Match billion/bn/b (b can follow a digit like "4.3b")
-  if (/billion|bn|(\d)b($|[^a-z])/i.test(cleaned)) multiplier = 1_000_000_000;
+  if (/billion|bn|(\d)b($|[^a-z])/i.test(firstPart)) multiplier = 1_000_000_000;
   // Match million/mn/m (m can follow a digit like "42m")
-  else if (/million|mn|(\d)m($|[^a-z])/i.test(cleaned)) multiplier = 1_000_000;
+  else if (/million|mn|(\d)m($|[^a-z])/i.test(firstPart)) multiplier = 1_000_000;
   // Match thousand/k (k can follow a digit like "500k")
-  else if (/thousand|(\d)k($|[^a-z])/i.test(cleaned)) multiplier = 1_000;
+  else if (/thousand|(\d)k($|[^a-z])/i.test(firstPart)) multiplier = 1_000;
 
   let value = base * multiplier;
   

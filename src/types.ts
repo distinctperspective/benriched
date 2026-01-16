@@ -85,6 +85,11 @@ export interface EnrichmentResult {
   revenue_pass: boolean;
   industry_pass: boolean;
   diagnostics?: DiagnosticInfo;
+  // Parent company linking
+  parent_company_name?: string | null;
+  parent_company_domain?: string | null;
+  inherited_revenue?: boolean;
+  inherited_size?: boolean;
 }
 
 export interface LinkedInValidation {
