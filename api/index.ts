@@ -73,13 +73,22 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    // Normalize domain: strip protocol, www, trailing slash, and extract root domain
-    normalizedDomain = (domain as string)
-      .toLowerCase()
-      .replace(/^https?:\/\//, '')  // Remove protocol
-      .replace(/^www\./, '')         // Remove www.
-      .replace(/\/.*$/, '')          // Remove path
-      .trim();
+    // Normalize domain using WHATWG URL API for security and robustness
+    let normalizedDomain = '';
+    
+    try {
+      // Try to parse as URL first
+      const url = new URL(domain.startsWith('http') ? domain : `https://${domain}`);
+      normalizedDomain = url.hostname.toLowerCase();
+    } catch {
+      // If URL parsing fails, fall back to simple normalization
+      normalizedDomain = (domain as string)
+        .toLowerCase()
+        .replace(/^https?:\/\//, '')  // Remove protocol
+        .replace(/^www\./, '')         // Remove www.
+        .replace(/\/.*$/, '')          // Remove path
+        .trim();
+    }
     
     // Extract root domain (e.g., "shop.example.com" -> "example.com")
     const parts = normalizedDomain.split('.');
@@ -106,6 +115,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (existingCompany) {
         // Log the request (always, even without hs_company_id)
         const responseTimeMs = Date.now() - requestStartTime;
+        
+        console.log(`[Cache Hit] ${normalizedDomain} (cached, ${responseTimeMs}ms)`);
+        
         await supabase.from('enrichment_requests').insert({
           hs_company_id: companyId || `api_${requestId}`,
           domain: normalizedDomain,
