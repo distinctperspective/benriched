@@ -120,7 +120,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         try {
           await supabase.from('enrichment_requests').insert({
-            hs_company_id: companyId || `api_${requestId}`,
+            hs_company_id: companyId || null, // Don't use api_${requestId} to avoid unique constraint issues
             domain: normalizedDomain,
             company_id: existingCompany.id,
             request_source: companyId ? 'hubspot' : 'api',
