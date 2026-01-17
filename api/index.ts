@@ -118,16 +118,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         console.log(`[Cache Hit] ${normalizedDomain} (cached, ${responseTimeMs}ms)`);
         
-        await supabase.from('enrichment_requests').insert({
-          hs_company_id: companyId || `api_${requestId}`,
-          domain: normalizedDomain,
-          company_id: existingCompany.id,
-          request_source: companyId ? 'hubspot' : 'api',
-          request_type: 'cache_hit',
-          was_cached: true,
-          cost_usd: 0,
-          response_time_ms: responseTimeMs,
-        });
+        try {
+          await supabase.from('enrichment_requests').insert({
+            hs_company_id: companyId || `api_${requestId}`,
+            domain: normalizedDomain,
+            company_id: existingCompany.id,
+            request_source: companyId ? 'hubspot' : 'api',
+            request_type: 'cache_hit',
+            was_cached: true,
+            cost_usd: 0,
+            response_time_ms: responseTimeMs,
+          });
+          console.log(`[Cache Log] Successfully logged cache hit for ${normalizedDomain}`);
+        } catch (logError) {
+          console.error('[Cache Log Error]', logError);
+        }
 
         return res.status(200).json({
           success: true,
