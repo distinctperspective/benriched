@@ -10,22 +10,9 @@ dotenv.config({ path: '.env.local' });
 
 const SEARCH_MODEL_ID = 'perplexity/sonar-pro';
 
-// Core TAM NAICS codes
-const CORE_TAM_NAICS = [
-  '311991', // Perishable Prepared Food Manufacturing
-  '311612', // Meat Processed from Carcasses
-  '311611', // Animal Slaughtering
-  '311615', // Poultry Processing
-  '311999', // All Other Miscellaneous Food Manufacturing
-];
-
-const NAICS_DESCRIPTIONS: Record<string, string> = {
-  '311991': 'Perishable Prepared Food Manufacturing',
-  '311612': 'Meat Processed from Carcasses',
-  '311611': 'Animal Slaughtering',
-  '311615': 'Poultry Processing',
-  '311999': 'All Other Miscellaneous Food Manufacturing',
-};
+// Load target ICP NAICS codes from database
+let CORE_TAM_NAICS: string[] = [];
+let NAICS_DESCRIPTIONS: Record<string, string> = {};
 
 interface DiscoveredCompany {
   name: string;
@@ -40,6 +27,28 @@ const supabase = createClient(
   process.env.SUPABASE_URL || '',
   process.env.SUPABASE_ANON_KEY || ''
 );
+
+async function loadTargetNAICSCodes(): Promise<void> {
+  const { data, error } = await supabase
+    .from('naics_codes')
+    .select('naics_code, naics_industry_title')
+    .eq('target_icp', true)
+    .order('naics_code');
+
+  if (error) {
+    console.error('Error loading NAICS codes:', error);
+    throw error;
+  }
+
+  if (data) {
+    CORE_TAM_NAICS = data.map(n => n.naics_code);
+    NAICS_DESCRIPTIONS = data.reduce((acc, n) => {
+      acc[n.naics_code] = n.naics_industry_title;
+      return acc;
+    }, {} as Record<string, string>);
+    console.log(`✅ Loaded ${CORE_TAM_NAICS.length} target ICP NAICS codes from database`);
+  }
+}
 
 async function getExistingDomains(): Promise<Set<string>> {
   const domains = new Set<string>();
@@ -220,8 +229,14 @@ async function discoverTAM(
   strategy: string = 'all',
   limit: number = 50
 ) {
+  // Load NAICS codes if not already loaded
+  if (CORE_TAM_NAICS.length === 0) {
+    await loadTargetNAICSCodes();
+  }
+
   if (!CORE_TAM_NAICS.includes(naicsCode)) {
-    console.error(`Invalid NAICS code. Must be one of: ${CORE_TAM_NAICS.join(', ')}`);
+    console.error(`Invalid NAICS code. Must be one of the ${CORE_TAM_NAICS.length} target ICP codes in the database.`);
+    console.error(`Use --list to see all available NAICS codes.`);
     return;
   }
 
@@ -334,9 +349,31 @@ async function discoverTAM(
   }
 }
 
-// Run discovery
-const naicsCode = process.argv[2] || '311615'; // Default to Poultry Processing
-const strategy = (process.argv[3] as any) || 'all'; // Default to all strategies
-const limit = parseInt(process.argv[4] || '50');
+async function listNAICSCodes() {
+  await loadTargetNAICSCodes();
+  
+  console.log(`\n${'='.repeat(70)}`);
+  console.log(`🎯 Target ICP NAICS Codes (${CORE_TAM_NAICS.length} total)`);
+  console.log(`${'='.repeat(70)}\n`);
+  
+  CORE_TAM_NAICS.forEach(code => {
+    console.log(`${code} - ${NAICS_DESCRIPTIONS[code]}`);
+  });
+  
+  console.log(`\n${'='.repeat(70)}`);
+  console.log(`\n💡 Usage: npx tsx discover-tam-local.ts <naics_code> [strategy] [limit]`);
+  console.log(`   Example: npx tsx discover-tam-local.ts 311615 all 50\n`);
+}
 
-discoverTAM(naicsCode, strategy, limit).catch(console.error);
+// Run discovery
+const args = process.argv.slice(2);
+
+if (args[0] === '--list' || args[0] === '-l') {
+  listNAICSCodes().catch(console.error);
+} else {
+  const naicsCode = args[0] || '311615'; // Default to Poultry Processing
+  const strategy = (args[1] as any) || 'all'; // Default to all strategies
+  const limit = parseInt(args[2] || '50');
+  
+  discoverTAM(naicsCode, strategy, limit).catch(console.error);
+}
