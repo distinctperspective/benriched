@@ -151,6 +151,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .single();
     const companyExistedBefore = !!existingBeforeEnrich;
 
+    // Additional validation: ensure no duplicate domains
+    if (!force_refresh && companyExistedBefore) {
+      console.log(`[Duplicate Domain] ${normalizedDomain} already exists, serving from cache`);
+      const responseTimeMs = Date.now() - requestStartTime;
+      await supabase.from('enrichment_requests').insert({
+        hs_company_id: companyId || null,
+        domain: normalizedDomain,
+        company_id: existingBeforeEnrich.id,
+        request_source: companyId ? 'hubspot' : 'api',
+        request_type: 'cache_hit',
+        was_cached: true,
+        cost_usd: 0,
+        response_time_ms: responseTimeMs,
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: existingBeforeEnrich,
+        cached: true,
+        hs_company_id: companyId || null
+      });
+    }
+
     // Async enrichment function
     const doEnrichment = async () => {
       const searchModel = gateway(SEARCH_MODEL_ID);
