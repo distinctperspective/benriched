@@ -290,7 +290,7 @@ export async function enrichDomainWithCost(
   let linkedinFromScrape: string | null = null;
   let linkedinSource: 'website' | 'pass1' | null = null;
   let linkedinEmployeeCount: string | null = null;
-  const linkedinRegex = /https?:\/\/(?:www\.)?linkedin\.com\/company\/([a-zA-Z0-9_\-'%]+)\/?/gi;
+  const linkedinRegex = /https?:\/\/(?:www\.)?linkedin\.com\/company\/([a-zA-Z0-9_\-'%&]+)\/?/gi;
   
   // First, try to find LinkedIn on the company's own website (MOST RELIABLE - this is authoritative)
   for (const [url, content] of scrapedContent) {
