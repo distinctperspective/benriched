@@ -3,7 +3,7 @@ import { EnrichmentResult, Pass1Result, NAICSCode, TargetICPMatch, RevenueEviden
 import { countryNameToCode } from '../../utils/parsing.js';
 import { calculateAICost } from './pricing.js';
 import { PASS2_PROMPT } from './prompts.js';
-import { TARGET_ICP_NAICS, VALID_REVENUE_BANDS, PASSING_REVENUE_BANDS, TARGET_REGIONS, normalizeSizeBand, VALID_SIZE_BANDS } from './icp.js';
+import { VALID_REVENUE_BANDS, PASSING_REVENUE_BANDS, TARGET_REGIONS, normalizeSizeBand, VALID_SIZE_BANDS, getMatchingNaics } from './icp.js';
 
 export interface Pass2WithUsage {
   result: EnrichmentResult;
@@ -117,7 +117,7 @@ export async function pass2_analyzeContentWithUsage(
       }
     }
     
-    const targetIcpMatches: TargetICPMatch[] = naicsCodes.filter(naics => TARGET_ICP_NAICS.has(naics.code));
+    const targetIcpMatches: TargetICPMatch[] = await getMatchingNaics(naicsCodes);
     const isTargetRegion = TARGET_REGIONS.has(parsed.hq_country) || parsed.is_us_hq || parsed.is_us_subsidiary;
     const hasPassingRevenue = parsed.company_revenue && PASSING_REVENUE_BANDS.has(parsed.company_revenue);
     const targetIcp = targetIcpMatches.length > 0 && isTargetRegion && hasPassingRevenue;

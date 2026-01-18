@@ -13,7 +13,7 @@ import { detectEntityMismatch } from './components/entityDetection.js';
 import { categorizeUrls } from './components/urlCategorization.js';
 import { pass1_identifyUrlsWithUsage, pass1_identifyUrlsStrict, type Pass1WithUsage } from './components/pass1.js';
 import { pass2_analyzeContentWithUsage, type Pass2WithUsage } from './components/pass2.js';
-import { TARGET_ICP_NAICS, VALID_REVENUE_BANDS, PASSING_REVENUE_BANDS, TARGET_REGIONS, getMatchingNaics } from './components/icp.js';
+import { VALID_REVENUE_BANDS, PASSING_REVENUE_BANDS, TARGET_REGIONS } from './components/icp.js';
 
 // Re-export for external use
 export { calculateAICost };

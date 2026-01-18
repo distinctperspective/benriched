@@ -1,15 +1,38 @@
 // ICP (Ideal Customer Profile) configuration and calculation
+import { createClient } from '@supabase/supabase-js';
 
-// Target NAICS codes for ICP matching
-export const TARGET_ICP_NAICS = new Set([
-  '111219', '111333', '111334', '111339', '111998', '112120', '112210', '112310', '112320', '112330', '112340', '112390',
-  '115114', '311111', '311119', '311211', '311212', '311213', '311221', '311224', '311225', '311230', '311313', '311314',
-  '311340', '311351', '311352', '311411', '311412', '311421', '311422', '311423', '311511', '311512', '311513', '311514',
-  '311520', '311611', '311612', '311613', '311615', '311710', '311811', '311812', '311813', '311821', '311824', '311830',
-  '311911', '311919', '311920', '311930', '311941', '311942', '311991', '311999', '312111', '312112', '312120', '312130',
-  '312140', '424410', '424420', '424430', '424440', '424450', '424460', '424470', '424480', '424490', '424510', '424590',
-  '445110', '445131', '493120'
-]);
+// Target NAICS codes for ICP matching - loaded from database
+let TARGET_ICP_NAICS = new Set<string>();
+let isNaicsLoaded = false;
+
+// Load target ICP NAICS codes from database
+async function loadTargetNaicsCodes(): Promise<void> {
+  if (isNaicsLoaded) return;
+  
+  const supabase = createClient(
+    process.env.SUPABASE_URL || '',
+    process.env.SUPABASE_ANON_KEY || ''
+  );
+  
+  const { data, error } = await supabase
+    .from('naics_codes')
+    .select('naics_code')
+    .eq('target_icp', true);
+  
+  if (error) {
+    console.error('Error loading target ICP NAICS codes:', error);
+    // Fallback to empty set if database fails
+    TARGET_ICP_NAICS = new Set();
+  } else if (data) {
+    TARGET_ICP_NAICS = new Set(data.map(n => n.naics_code));
+    console.log(`✅ Loaded ${TARGET_ICP_NAICS.size} target ICP NAICS codes from database`);
+  }
+  
+  isNaicsLoaded = true;
+}
+
+// Initialize NAICS codes on module load
+loadTargetNaicsCodes().catch(console.error);
 
 // Valid revenue bands
 export const VALID_REVENUE_BANDS = new Set([
@@ -63,12 +86,14 @@ export function isPassingRevenue(revenueBand: string | null): boolean {
 }
 
 // Check if NAICS codes match target ICP
-export function hasMatchingNaics(naicsCodes: Array<{ code: string }>): boolean {
+export async function hasMatchingNaics(naicsCodes: Array<{ code: string }>): Promise<boolean> {
+  await loadTargetNaicsCodes();
   return naicsCodes.some(naics => TARGET_ICP_NAICS.has(naics.code));
 }
 
 // Get matching NAICS codes
-export function getMatchingNaics<T extends { code: string }>(naicsCodes: T[]): T[] {
+export async function getMatchingNaics<T extends { code: string }>(naicsCodes: T[]): Promise<T[]> {
+  await loadTargetNaicsCodes();
   return naicsCodes.filter(naics => TARGET_ICP_NAICS.has(naics.code));
 }
 
@@ -78,14 +103,14 @@ export function isInTargetRegion(hqCountry: string | null, isUsHq: boolean, isUs
 }
 
 // Calculate full ICP status
-export function calculateTargetIcp(
+export async function calculateTargetIcp(
   naicsCodes: Array<{ code: string }>,
   hqCountry: string | null,
   isUsHq: boolean,
   isUsSubsidiary: boolean,
   revenueBand: string | null
-): boolean {
-  const hasIndustry = hasMatchingNaics(naicsCodes);
+): Promise<boolean> {
+  const hasIndustry = await hasMatchingNaics(naicsCodes);
   const hasRegion = isInTargetRegion(hqCountry, isUsHq, isUsSubsidiary);
   const hasRevenue = isPassingRevenue(revenueBand);
   
