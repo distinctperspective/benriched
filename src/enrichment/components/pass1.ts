@@ -29,12 +29,18 @@ Check LinkedIn and company website for employee count.
 For PUBLIC companies, check SEC 10-K filings.
 Mark ZoomInfo/Growjo/Owler figures as estimates - they're often inaccurate.
 
+CRITICAL - LinkedIn URL: Find the EXACT, CURRENT LinkedIn company page URL. 
+- Verify the URL is active and matches the company at ${domain}
+- Use the format: https://www.linkedin.com/company/[exact-slug]
+- Do NOT include outdated suffixes or variations
+- If multiple LinkedIn pages exist, choose the one that matches this specific company/domain
+
 After finding the data, format as JSON:
 {
   "company_name": "Full Company Name (e.g., Ajinomoto Foods North America, not just Ajinomoto)",
   "parent_company": "Parent company name if this is a subsidiary, otherwise null",
   "headquarters": {"city": "City", "state": "State", "country": "Country", "country_code": "US"},
-  "urls_to_crawl": ["https://company.com", "https://linkedin.com/company/..."],
+  "urls_to_crawl": ["https://company.com", "https://linkedin.com/company/exact-slug"],
   "revenue_found": [
     {"amount": "$500 million", "source": "company website", "year": "2024", "is_estimate": false}
   ],
