@@ -80,11 +80,89 @@ export async function pass2_analyzeContentWithUsage(
     context += `--- ${url} ---\n${truncated}\n\n`;
   }
   
+  // Define JSON schema for structured output (OpenAI supports this)
+  const pass2Schema = {
+    type: "object",
+    properties: {
+      business_description: { type: "string" },
+      city: { type: "string" },
+      state: { type: ["string", "null"] },
+      hq_country: { type: "string" },
+      is_us_hq: { type: "boolean" },
+      is_us_subsidiary: { type: "boolean" },
+      linkedin_url: { type: ["string", "null"] },
+      company_revenue: { 
+        type: ["string", "null"],
+        enum: ["0-500K", "500K-1M", "1M-5M", "5M-10M", "10M-25M", "25M-75M", "75M-200M", "200M-500M", "500M-1B", "1B-10B", "10B-100B", "100B-1T", null]
+      },
+      company_size: { 
+        type: ["string", "null"],
+        enum: ["0-1 Employees", "2-10 Employees", "11-50 Employees", "51-200 Employees", "201-500 Employees", "501-1,000 Employees", "1,001-5,000 Employees", "5,001-10,000 Employees", "10,001+ Employees", "unknown", null]
+      },
+      naics_codes_6_digit: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            code: { type: "string" },
+            description: { type: "string" }
+          },
+          required: ["code", "description"]
+        }
+      },
+      source_urls: {
+        type: "array",
+        items: { type: "string" }
+      },
+      quality: {
+        type: "object",
+        properties: {
+          location: {
+            type: "object",
+            properties: {
+              confidence: { type: "string", enum: ["high", "medium", "low"] },
+              reasoning: { type: "string" }
+            },
+            required: ["confidence", "reasoning"]
+          },
+          revenue: {
+            type: "object",
+            properties: {
+              confidence: { type: "string", enum: ["high", "medium", "low"] },
+              reasoning: { type: "string" }
+            },
+            required: ["confidence", "reasoning"]
+          },
+          size: {
+            type: "object",
+            properties: {
+              confidence: { type: "string", enum: ["high", "medium", "low"] },
+              reasoning: { type: "string" }
+            },
+            required: ["confidence", "reasoning"]
+          },
+          industry: {
+            type: "object",
+            properties: {
+              confidence: { type: "string", enum: ["high", "medium", "low"] },
+              reasoning: { type: "string" }
+            },
+            required: ["confidence", "reasoning"]
+          }
+        },
+        required: ["location", "revenue", "size", "industry"]
+      }
+    },
+    required: ["business_description", "city", "hq_country", "is_us_hq", "is_us_subsidiary", "source_urls", "quality"]
+  };
+
   const { text, usage } = await generateText({
     model,
     system: PASS2_PROMPT,
     prompt: context,
     temperature: 0.1,
+    // Note: OpenAI structured outputs - uncomment when ready to enable
+    // experimental_output: { schema: pass2Schema }
   });
   
   const inputTokens = usage?.inputTokens || 0;
@@ -224,9 +302,29 @@ export async function pass2_analyzeContentWithUsage(
       naics_codes_6_digit: naicsCodes,
       naics_codes_csv: naicsCodes.map(n => n.code).join(','),
       // Use Pass 1 headquarters as fallback if Pass 2 didn't find location
+      // Then infer from TLD as last resort
       city: parsed.city || pass1Data?.headquarters?.city || 'unknown',
       state: parsed.state || pass1Data?.headquarters?.state || null,
-      hq_country: countryNameToCode(parsed.hq_country) || pass1Data?.headquarters?.country_code || 'unknown',
+      hq_country: (() => {
+        const pass2Country = countryNameToCode(parsed.hq_country);
+        const pass1Country = pass1Data?.headquarters?.country_code;
+        
+        // If we have valid data from Pass 2 or Pass 1, use it
+        if (pass2Country && pass2Country !== 'unknown') return pass2Country;
+        if (pass1Country && pass1Country !== 'unknown') return pass1Country;
+        
+        // Fallback: Infer from TLD
+        const tld = domain.split('.').pop()?.toLowerCase();
+        const tldToCountry: Record<string, string> = {
+          'ca': 'CA', 'uk': 'GB', 'au': 'AU', 'de': 'DE', 'fr': 'FR',
+          'jp': 'JP', 'cn': 'CN', 'in': 'IN', 'br': 'BR', 'mx': 'MX',
+          'es': 'ES', 'it': 'IT', 'nl': 'NL', 'se': 'SE', 'no': 'NO',
+          'dk': 'DK', 'fi': 'FI', 'nz': 'NZ', 'ie': 'IE', 'ch': 'CH',
+          'be': 'BE', 'at': 'AT', 'pl': 'PL', 'kr': 'KR', 'sg': 'SG'
+        };
+        
+        return tldToCountry[tld || ''] || 'unknown';
+      })(),
       is_us_hq: parsed.is_us_hq || false,
       is_us_subsidiary: parsed.is_us_subsidiary || false,
       source_urls: parsed.source_urls || [],

@@ -25,11 +25,19 @@ export const PASS2_PROMPT = `You are a data extraction specialist. Analyze the p
 
 Extract the following fields:
 - **business_description**: 2-4 sentence comprehensive description of what the company does, including: primary products/services, target markets/customers, key differentiators or unique value proposition, and business model if relevant
-- **city**: Main office or HQ city
+- **city**: Main office or HQ city of THIS SPECIFIC ENTITY (not the parent company)
 - **state**: For US companies, full state name (e.g., "Massachusetts", "California"); for non-US, main region or null
-- **hq_country**: 2-letter ISO country code (e.g., "US", "CA", "DE")
-- **is_us_hq**: Boolean - true if global HQ is in the United States
-- **is_us_subsidiary**: Boolean - true if this company has US operations/subsidiary (even if HQ is outside US). Examples: Solina (France HQ) has Solina USA, Ajinomoto (Japan HQ) has Ajinomoto Foods North America
+- **hq_country**: 2-letter ISO country code of THIS SPECIFIC ENTITY's HQ (e.g., "US", "CA", "DE", "GR")
+- **is_us_hq**: Boolean - true if THIS ENTITY's global HQ is in the United States
+- **is_us_subsidiary**: Boolean - true if EITHER:
+  1. This company has US operations/subsidiary (even if HQ is outside US), OR
+  2. This is a franchisee/subsidiary of a US-based parent company (even if located outside US)
+  
+  Examples:
+  - Solina (France HQ) has Solina USA → is_us_subsidiary: true
+  - Ajinomoto (Japan HQ) has Ajinomoto Foods North America → is_us_subsidiary: true
+  - Cinnabon Greece (Greece HQ, franchisee of US-based Cinnabon) → is_us_subsidiary: true
+  - McDonald's Japan (Japan HQ, subsidiary of US-based McDonald's) → is_us_subsidiary: true
 - **linkedin_url**: Official LinkedIn company page URL (null if not found)
 - **company_revenue**: Annual revenue using ONLY these exact bands:
   "0-500K", "500K-1M", "1M-5M", "5M-10M", "10M-25M", "25M-75M", 
@@ -37,15 +45,24 @@ Extract the following fields:
   (null if not found)
   
   **CRITICAL FOR REVENUE - Show your work:** 
-  - **FIRST**: Check if revenue figures were provided in the context from web search (marked as "Revenue figures found during web search")
-  - If web search found revenue, USE THAT DATA and map to appropriate band
-  - Extract ALL revenue figures you find in the scraped content with source and year
+  - Extract ALL revenue figures from BOTH web search context AND scraped content
   - Normalize amounts to USD (e.g., "$42M" = 42,000,000)
-  - Prioritize: Web search data > SEC filings > Press releases > Wikipedia > ZoomInfo/Crunchbase estimates
-  - If multiple figures exist, use the most recent and explicit one
-  - If conflicting figures differ by more than 5x, set company_revenue to null
+  - **PRIORITY BY SOURCE AUTHORITY** (highest to lowest):
+    1. SEC filing / annual report / audited financial statement
+    2. Investor relations / earnings release
+    3. Company press release
+    4. Reputable media (Forbes, Bloomberg, Reuters, WSJ)
+    5. Wikipedia (as pointer, not primary source)
+    6. Directory / estimate sites (Growjo, Owler, Zippia, ZoomInfo, RocketReach)
+  - **SCOPE-AWARE CONFLICT DETECTION**:
+    * Check if revenue figures have "scope" labels (operating_company vs ultimate_parent)
+    * ONLY apply 5x conflict rule within the SAME scope
+    * Subsidiary $200M vs Parent $11B is NOT a conflict - they're different entities
+    * If figures are for different scopes, use the operating_company figure when available
+  - If multiple figures exist in SAME scope, use the most recent and highest authority source
+  - If conflicting figures within same scope differ by more than 5x, set company_revenue to null
   - If only vague phrases like "multi-million" or "8-figure", choose the LOWEST compatible band
-  - If no explicit figure found in web search OR scraped content, set company_revenue to null (do NOT estimate from employee count)
+  - If no explicit figure found, set company_revenue to null (do NOT estimate from employee count)
   - Map your normalized amount to the appropriate band based on the range
   - Example: $42M → "25M-75M" band, $11.6B → "10B-100B" band
 - **company_size**: Employee count using ONLY these exact bands:

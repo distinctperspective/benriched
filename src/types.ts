@@ -1,13 +1,32 @@
+export type EntityScope = 'operating_company' | 'ultimate_parent';
+export type RelationshipType = 'standalone' | 'subsidiary' | 'division' | 'brand' | 'unknown';
+export type SourceType = 'filing' | 'company_ir' | 'company_site' | 'reputable_media' | 'estimate_site' | 'directory' | 'unknown';
+
 export interface RevenueEvidence {
   amount: string;
   source: string;
   year: string;
   is_estimate: boolean;
+  scope?: EntityScope;
+  source_type?: SourceType;
+  evidence_url?: string;
+  evidence_excerpt?: string;
+}
+
+export interface EmployeeEvidence {
+  amount: string;
+  source: string;
+  scope?: EntityScope;
+  source_type?: SourceType;
+  evidence_url?: string;
 }
 
 export interface Pass1Result {
   company_name: string;
   parent_company?: string | null;
+  entity_scope?: EntityScope;
+  relationship_type?: RelationshipType;
+  scope_used_for_numbers?: EntityScope;
   headquarters?: {
     city?: string;
     state?: string;
@@ -17,10 +36,8 @@ export interface Pass1Result {
   urls_to_crawl: string[];
   search_queries?: string[];
   revenue_found?: RevenueEvidence[] | null;
-  employee_count_found?: {
-    amount: string;
-    source: string;
-  } | null;
+  employee_count_found?: EmployeeEvidence | null;
+  linkedin_url_candidates?: Array<{url: string; confidence: 'high' | 'medium' | 'low'}>;
 }
 
 export interface NAICSCode {
@@ -45,6 +62,22 @@ export interface TargetICPMatch {
   description: string;
 }
 
+export interface FieldSource {
+  url: string;
+  source_type: SourceType;
+  excerpt?: string;
+  scope?: EntityScope;
+  year?: string;
+}
+
+export interface FieldSources {
+  revenue?: FieldSource[];
+  employees?: FieldSource[];
+  hq?: FieldSource[];
+  linkedin?: FieldSource[];
+  naics?: FieldSource[];
+}
+
 export interface DiagnosticInfo {
   revenue_sources_found: RevenueEvidence[];
   employee_sources_found: { amount: string; source: string } | null;
@@ -61,6 +94,7 @@ export interface DiagnosticInfo {
     employees_found?: number | null;
     location_found?: string | null;
   };
+  field_sources?: FieldSources;
 }
 
 export interface EnrichmentResult {

@@ -17,42 +17,164 @@ export async function pass1_identifyUrls(domain: string, model: any, modelId: st
 export async function pass1_identifyUrlsWithUsage(domain: string, model: any, modelId: string = 'perplexity/sonar-pro'): Promise<Pass1WithUsage> {
   console.log(`\n📋 Pass 1: Identifying URLs to crawl...`);
   
+  // Define JSON schema for structured output
+  const pass1Schema = {
+    type: "object",
+    properties: {
+      company_name: { type: "string" },
+      parent_company: { type: ["string", "null"] },
+      entity_scope: { type: "string", enum: ["operating_company", "ultimate_parent"] },
+      relationship_type: { type: "string", enum: ["standalone", "subsidiary", "division", "brand", "unknown"] },
+      scope_used_for_numbers: { type: "string", enum: ["operating_company", "ultimate_parent"] },
+      headquarters: {
+        type: "object",
+        properties: {
+          city: { type: "string" },
+          state: { type: "string" },
+          country: { type: "string" },
+          country_code: { type: "string" }
+        }
+      },
+      urls_to_crawl: { type: "array", items: { type: "string" } },
+      revenue_found: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            amount: { type: "string" },
+            source: { type: "string" },
+            year: { type: "string" },
+            is_estimate: { type: "boolean" },
+            scope: { type: "string", enum: ["operating_company", "ultimate_parent"] },
+            source_type: { type: "string", enum: ["filing", "company_ir", "company_site", "reputable_media", "estimate_site", "directory", "unknown"] },
+            evidence_url: { type: "string" },
+            evidence_excerpt: { type: "string" }
+          },
+          required: ["amount", "source", "year", "is_estimate"]
+        }
+      },
+      employee_count_found: {
+        type: ["object", "null"],
+        properties: {
+          amount: { type: "string" },
+          source: { type: "string" },
+          scope: { type: "string", enum: ["operating_company", "ultimate_parent"] },
+          source_type: { type: "string", enum: ["filing", "company_ir", "company_site", "reputable_media", "estimate_site", "directory", "unknown"] },
+          evidence_url: { type: "string" }
+        },
+        required: ["amount", "source"]
+      },
+      linkedin_url_candidates: {
+        type: "array",
+        items: {
+          type: "object",
+          properties: {
+            url: { type: "string" },
+            confidence: { type: "string", enum: ["high", "medium", "low"] }
+          },
+          required: ["url", "confidence"]
+        }
+      }
+    },
+    required: ["company_name", "urls_to_crawl"]
+  };
+  
+  // Note: Perplexity may not support response_format yet
+  // Schema defined above for documentation and future use when supported
   const { text, usage } = await generateText({
     model,
-    prompt: `What is the annual revenue and employee count for the company at ${domain}?
+    // response_format: { type: 'json', schema: pass1Schema }, // TODO: Enable when Perplexity supports it
+    prompt: `Find annual revenue and employee count for the company at ${domain}.
 
-IMPORTANT: Find data for the SPECIFIC company at this domain, NOT its parent company.
-If this is a subsidiary (e.g., "Company Name North America"), find THAT subsidiary's revenue and employees, not the global parent's figures.
+#ENTITY SCOPE TRACKING#
 
-HOWEVER: If you cannot find specific subsidiary data, USE PARENT COMPANY DATA and note it in parent_company field.
-Better to return parent company revenue than no revenue at all.
+REQUIRED: Identify the relationship between the domain and any parent company:
+- entity_scope: "operating_company" (the specific entity at this domain) OR "ultimate_parent" (global parent)
+- relationship_type: "standalone" | "subsidiary" | "division" | "brand" | "unknown"
+- scope_used_for_numbers: Which entity do the revenue/employee numbers represent?
 
-Search their website, Forbes, press releases, and news articles for revenue figures.
-Check LinkedIn and company website for employee count.
-For PUBLIC companies, check SEC 10-K filings.
-Mark ZoomInfo/Growjo/Owler figures as estimates - they're often inaccurate.
+STRATEGY:
+1. First, try to find data for the SPECIFIC operating company at this domain
+2. If operating company data is unavailable, USE PARENT COMPANY DATA (for revenue/employees ONLY)
+3. ALWAYS label which scope each number belongs to
+4. **CRITICAL**: Headquarters location should ALWAYS be for the operating company at this domain, NOT the parent company
+   - Example: cinnabongreece.com → HQ is Athens, Greece (NOT Atlanta, USA where Cinnabon parent is located)
 
-CRITICAL - LinkedIn URL: Find the EXACT, CURRENT LinkedIn company page URL. 
-- Verify the URL is active and matches the company at ${domain}
-- Use the format: https://www.linkedin.com/company/[exact-slug]
-- Do NOT include outdated suffixes or variations
-- If multiple LinkedIn pages exist, choose the one that matches this specific company/domain
+#REVENUE COLLECTION (BE AGGRESSIVE)#
 
-After finding the data, format as JSON:
+Search ALL of these sources and INCLUDE ALL FINDINGS:
+- SEC 10-K filings (for public companies)
+- Company investor relations / earnings releases
+- Company website (About, Press Releases)
+- Forbes, Bloomberg, Reuters, Wall Street Journal
+- Wikipedia (as pointer to sources)
+- Industry reports and market research
+- **Growjo, Zippia, Owler, ZoomInfo** (mark as is_estimate=true, but INCLUDE THEM)
+- Crunchbase, PitchBook (mark as is_estimate=true)
+
+For EACH revenue figure found, provide:
+- amount: "$500 million" or "$500M" format
+- source: Name of source (e.g., "Growjo", "SEC 10-K", "Forbes")
+- year: Year of data (e.g., "2024", "2023")
+- is_estimate: true if from estimate site (Growjo/Zippia/Owler/ZoomInfo), false if from filing/official source
+- scope: "operating_company" OR "ultimate_parent"
+- source_type: "filing" | "company_ir" | "company_site" | "reputable_media" | "estimate_site" | "directory"
+- evidence_url: URL where you found this (if available)
+- evidence_excerpt: Short quote/excerpt showing the revenue figure (optional)
+
+**CRITICAL**: Do NOT skip estimate sites. Include Growjo, Zippia, Owler, ZoomInfo data even if marked as estimates.
+Better to have estimate data than NO data.
+
+#EMPLOYEE COUNT#
+
+For employee count, provide:
+- amount: Number as string (e.g., "2,500")
+- source: Where found (e.g., "LinkedIn", "company website")
+- scope: "operating_company" OR "ultimate_parent"
+- source_type: Same enum as revenue
+
+#LINKEDIN (OPTIONAL)#
+
+LinkedIn is OPTIONAL and NON-BLOCKING. If you find LinkedIn URLs:
+- Return linkedin_url_candidates: [{"url": "https://linkedin.com/company/slug", "confidence": "high"}]
+- Do NOT require exact verification
+- Include top 2-3 candidates if multiple exist
+
+#OUTPUT FORMAT#
+
+Return ONLY valid JSON (no explanatory text):
 {
-  "company_name": "Full Company Name (e.g., Ajinomoto Foods North America, not just Ajinomoto)",
-  "parent_company": "Parent company name if this is a subsidiary, otherwise null",
+  "company_name": "Full Company Name",
+  "parent_company": "Parent Company Name" or null,
+  "entity_scope": "operating_company" or "ultimate_parent",
+  "relationship_type": "standalone" | "subsidiary" | "division" | "brand" | "unknown",
+  "scope_used_for_numbers": "operating_company" or "ultimate_parent",
   "headquarters": {"city": "City", "state": "State", "country": "Country", "country_code": "US"},
-  "urls_to_crawl": ["https://company.com", "https://linkedin.com/company/exact-slug"],
+  "urls_to_crawl": ["https://company.com"],
   "revenue_found": [
-    {"amount": "$500 million", "source": "company website", "year": "2024", "is_estimate": false}
+    {
+      "amount": "$500 million",
+      "source": "Growjo",
+      "year": "2024",
+      "is_estimate": true,
+      "scope": "operating_company",
+      "source_type": "estimate_site",
+      "evidence_url": "https://growjo.com/company/...",
+      "evidence_excerpt": "Annual revenue: $500M"
+    }
   ],
-  "employee_count_found": {"amount": "2,500", "source": "LinkedIn"}
+  "employee_count_found": {
+    "amount": "2,500",
+    "source": "LinkedIn",
+    "scope": "operating_company",
+    "source_type": "directory"
+  },
+  "linkedin_url_candidates": [
+    {"url": "https://linkedin.com/company/slug", "confidence": "high"}
+  ]
 }
 
-**CRITICAL**: You MUST return valid JSON. Do NOT return explanatory text. Do NOT say you cannot find data.
-If uncertain which entity operates the domain, return the BEST AVAILABLE data (parent company if needed).
-Return ALL revenue figures found with sources. Return ONLY valid JSON, no other text.`,
+**CRITICAL**: Return valid JSON only. Include ALL revenue sources found (especially estimates). Label scope for each data point.`,
     temperature: 0.1,
   });
   

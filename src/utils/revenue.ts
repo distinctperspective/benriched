@@ -51,17 +51,28 @@ export function pickRevenueBandFromEvidence(
     }
   }
 
-  // Prioritize: 1) Non-estimates over estimates, 2) Higher figures, 3) More recent
+  // Prioritize: 1) Recent data (>5 years old is heavily penalized), 2) Non-estimates over estimates, 3) Higher figures
+  const currentYear = new Date().getFullYear();
   const sorted = [...parsed].sort((a, b) => {
-    // Non-estimates first
+    const aYear = a.yearNum ?? -1;
+    const bYear = b.yearNum ?? -1;
+    const aAge = aYear > 0 ? currentYear - aYear : 999;
+    const bAge = bYear > 0 ? currentYear - bYear : 999;
+    
+    // CRITICAL: Heavily penalize data >5 years old (ancient data should never win)
+    const aIsAncient = aAge > 5;
+    const bIsAncient = bAge > 5;
+    if (aIsAncient !== bIsAncient) return aIsAncient ? 1 : -1;
+    
+    // Non-estimates first (but only if both are recent or both are ancient)
     if (a.is_estimate !== b.is_estimate) return a.is_estimate ? 1 : -1;
+    
     // Higher figures preferred (business directories underestimate)
     const usdDiff = (b.usd as number) - (a.usd as number);
     if (Math.abs(usdDiff) > 1_000_000) return usdDiff > 0 ? 1 : -1;
+    
     // More recent preferred
-    const ay = a.yearNum ?? -1;
-    const by = b.yearNum ?? -1;
-    return by - ay;
+    return bYear - aYear;
   });
 
   const best = sorted[0];
