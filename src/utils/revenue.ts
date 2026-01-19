@@ -51,9 +51,42 @@ export function pickRevenueBandFromEvidence(
     }
   }
 
+  // Check for consensus: if multiple sources agree on similar figures (within 10%), prefer consensus
+  const consensusGroups = new Map<number, typeof parsed>();
+  for (const item of parsed) {
+    const usd = item.usd as number;
+    let foundGroup = false;
+    
+    for (const [groupUsd, group] of consensusGroups.entries()) {
+      // Group items within 10% of each other
+      if (Math.abs(usd - groupUsd) / groupUsd < 0.1) {
+        group.push(item);
+        foundGroup = true;
+        break;
+      }
+    }
+    
+    if (!foundGroup) {
+      consensusGroups.set(usd, [item]);
+    }
+  }
+  
+  // Find the largest consensus group (2+ sources agreeing)
+  let consensusGroup: typeof parsed | null = null;
+  let maxGroupSize = 1;
+  for (const group of consensusGroups.values()) {
+    if (group.length > maxGroupSize) {
+      maxGroupSize = group.length;
+      consensusGroup = group;
+    }
+  }
+  
+  // If we have consensus (2+ sources), use that group; otherwise use all data
+  const dataToSort = consensusGroup && consensusGroup.length >= 2 ? consensusGroup : parsed;
+  
   // Prioritize: 1) Recent data (>5 years old is heavily penalized), 2) Non-estimates over estimates, 3) Higher figures
   const currentYear = new Date().getFullYear();
-  const sorted = [...parsed].sort((a, b) => {
+  const sorted = [...dataToSort].sort((a, b) => {
     const aYear = a.yearNum ?? -1;
     const bYear = b.yearNum ?? -1;
     const aAge = aYear > 0 ? currentYear - aYear : 999;
@@ -76,6 +109,9 @@ export function pickRevenueBandFromEvidence(
   });
 
   const best = sorted[0];
+  
+  // Add consensus info to reasoning if applicable
+  const hasConsensus = consensusGroup && consensusGroup.length >= 2;
   const band = best.usd ? mapUsdToRevenueBand(best.usd) : null;
   if (!band) {
     return { band: null, confidence: 'low', reasoning: 'Could not map revenue evidence to a band' };
@@ -89,10 +125,11 @@ export function pickRevenueBandFromEvidence(
         ? 'medium'
         : 'high';
 
+  const consensusNote = hasConsensus ? ` (${maxGroupSize} sources agree)` : '';
   return {
     band,
     confidence,
-    reasoning: `Mapped revenue evidence ${best.amount} (${best.year}, ${best.source}) to ${band}`,
+    reasoning: `Mapped revenue evidence ${best.amount} (${best.year || 'no year'}, ${best.source})${consensusNote} to ${band}`,
   };
 }
 

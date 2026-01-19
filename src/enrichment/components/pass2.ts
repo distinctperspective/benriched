@@ -302,9 +302,20 @@ export async function pass2_analyzeContentWithUsage(
       naics_codes_6_digit: naicsCodes,
       naics_codes_csv: naicsCodes.map(n => n.code).join(','),
       // Use Pass 1 headquarters as fallback if Pass 2 didn't find location
-      // Then infer from TLD as last resort
-      city: parsed.city || pass1Data?.headquarters?.city || 'unknown',
-      state: parsed.state || pass1Data?.headquarters?.state || null,
+      // CRITICAL: Pass 1 uses web search and is often more accurate than Pass 2's scraped content
+      // Always prefer Pass 1 when Pass 2 has "Unknown" city or when Pass 1 has data
+      city: (() => {
+        const pass2City = parsed.city?.toLowerCase() !== 'unknown' ? parsed.city : null;
+        const pass1City = pass1Data?.headquarters?.city;
+        // Prefer Pass 1 if available, otherwise use Pass 2
+        return pass1City || pass2City || 'unknown';
+      })(),
+      state: (() => {
+        const pass2State = parsed.state?.toLowerCase() !== 'unknown' ? parsed.state : null;
+        const pass1State = pass1Data?.headquarters?.state;
+        // Prefer Pass 1 if available, otherwise use Pass 2
+        return pass1State || pass2State || null;
+      })(),
       hq_country: (() => {
         const pass2Country = countryNameToCode(parsed.hq_country);
         const pass1Country = pass1Data?.headquarters?.country_code;

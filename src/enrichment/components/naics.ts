@@ -56,7 +56,9 @@ function retrieveCandidateNAICS(
     software: ['software', 'technology', 'saas', 'platform', 'digital'],
     automotive: ['automotive', 'car', 'vehicle', 'auto'],
     construction: ['construction', 'building', 'contractor'],
-    healthcare: ['healthcare', 'medical', 'hospital', 'clinic']
+    healthcare: ['healthcare', 'medical', 'hospital', 'clinic'],
+    health_supplements: ['supplement', 'vitamin', 'nutraceutical', 'wellness', 'health product', 'dietary', 'redox'],
+    alcohol_beverage: ['liquor', 'wine', 'beer', 'spirits', 'vodka', 'whiskey', 'gin', 'rum', 'tequila', 'cocktail', 'bartender', 'distillery', 'brewery', 'winery']
   };
   
   const detectedSectors = new Set<string>();
@@ -81,6 +83,32 @@ function retrieveCandidateNAICS(
       { sector: 'utilities', codes: ['221'], keywords: ['electric', 'gas utility', 'water utility'] }
     ];
     
+    // SPECIAL CASE: If company is health supplements/wellness, penalize food retail codes
+    // (prevents "Baked Goods Retailers" for supplement companies incorrectly tagged as "Food & Beverage")
+    if (detectedSectors.has('health_supplements')) {
+      const foodRetailCodes = ['445291', '445298', '445110', '445120', '445230', '445292'];
+      if (foodRetailCodes.includes(code)) {
+        score -= 150; // Heavy penalty for food retail when it's clearly supplements
+      }
+      // Also penalize general food manufacturing if it's supplements
+      if (code.startsWith('311') && !description.includes('supplement') && !description.includes('vitamin')) {
+        score -= 100;
+      }
+    }
+    
+    // SPECIAL CASE: If company is alcohol/liquor, penalize food retail codes
+    // (prevents "Baked Goods Retailers" for liquor retailers)
+    if (detectedSectors.has('alcohol_beverage')) {
+      const foodRetailCodes = ['445291', '445298', '445110', '445120', '445230', '445292', '456199'];
+      if (foodRetailCodes.includes(code)) {
+        score -= 150; // Heavy penalty for food retail when it's clearly alcohol
+      }
+      // Penalize general food manufacturing for alcohol companies
+      if (code.startsWith('311') && !description.toLowerCase().includes('beverage')) {
+        score -= 100;
+      }
+    }
+    
     for (const penalty of unrelatedPenalties) {
       const hasCodePrefix = penalty.codes.some(prefix => code.startsWith(prefix));
       const hasKeyword = penalty.keywords.some(kw => description.includes(kw));
@@ -102,6 +130,25 @@ function retrieveCandidateNAICS(
     // Exact phrase match in description (highest score)
     if (combinedText.includes(description)) {
       score += 100;
+    }
+    
+    // Exact keyword-to-NAICS matching (very high score for specific matches)
+    const exactMatches: Record<string, string[]> = {
+      '722320': ['catering', 'caterer', 'caterers'],
+      '722310': ['food service contractor'],
+      '311811': ['bakery', 'bakeries'],
+      '445291': ['baked goods store'],
+      '312140': ['distillery', 'distilleries'],
+      '312120': ['brewery', 'breweries'],
+      '312130': ['winery', 'wineries']
+    };
+    
+    if (exactMatches[code]) {
+      for (const keyword of exactMatches[code]) {
+        if (combinedText.includes(keyword)) {
+          score += 50; // Very high boost for exact keyword match
+        }
+      }
     }
     
     // Multi-word phrase matching (more specific than single words)
@@ -161,6 +208,15 @@ function retrieveCandidateNAICS(
     
     if (detectedSectors.has('software')) {
       if (code.startsWith('511') || code.startsWith('541')) score += 15;
+    }
+    
+    if (detectedSectors.has('health_supplements')) {
+      // Boost health supplement stores (446191)
+      if (code.startsWith('446191')) score += 25;
+      // Boost vitamin/supplement manufacturing (325411, 325412)
+      if (code.startsWith('3254')) score += 20;
+      // Boost health product wholesale (424210)
+      if (code.startsWith('424210')) score += 15;
     }
     
     return { ...naics, score };
