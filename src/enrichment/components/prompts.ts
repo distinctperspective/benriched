@@ -37,15 +37,17 @@ Extract the following fields:
   (null if not found)
   
   **CRITICAL FOR REVENUE - Show your work:** 
-  - Extract ALL revenue figures you find in the content with source and year
+  - **FIRST**: Check if revenue figures were provided in the context from web search (marked as "Revenue figures found during web search")
+  - If web search found revenue, USE THAT DATA and map to appropriate band
+  - Extract ALL revenue figures you find in the scraped content with source and year
   - Normalize amounts to USD (e.g., "$42M" = 42,000,000)
-  - Prioritize: SEC filings > Press releases > Wikipedia > ZoomInfo/Crunchbase estimates
+  - Prioritize: Web search data > SEC filings > Press releases > Wikipedia > ZoomInfo/Crunchbase estimates
   - If multiple figures exist, use the most recent and explicit one
   - If conflicting figures differ by more than 5x, set company_revenue to null
   - If only vague phrases like "multi-million" or "8-figure", choose the LOWEST compatible band
-  - If no explicit figure found, set company_revenue to null (do NOT estimate from employee count)
+  - If no explicit figure found in web search OR scraped content, set company_revenue to null (do NOT estimate from employee count)
   - Map your normalized amount to the appropriate band based on the range
-  - Example: $42M → "25M-75M" band
+  - Example: $42M → "25M-75M" band, $11.6B → "10B-100B" band
 - **company_size**: Employee count using ONLY these exact bands:
   "0-1 Employees", "2-10 Employees", "11-50 Employees", "51-200 Employees", 
   "201-500 Employees", "501-1,000 Employees", "1,001-5,000 Employees", 
