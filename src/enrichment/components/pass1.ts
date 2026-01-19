@@ -24,6 +24,9 @@ export async function pass1_identifyUrlsWithUsage(domain: string, model: any, mo
 IMPORTANT: Find data for the SPECIFIC company at this domain, NOT its parent company.
 If this is a subsidiary (e.g., "Company Name North America"), find THAT subsidiary's revenue and employees, not the global parent's figures.
 
+HOWEVER: If you cannot find specific subsidiary data, USE PARENT COMPANY DATA and note it in parent_company field.
+Better to return parent company revenue than no revenue at all.
+
 Search their website, Forbes, press releases, and news articles for revenue figures.
 Check LinkedIn and company website for employee count.
 For PUBLIC companies, check SEC 10-K filings.
@@ -47,7 +50,9 @@ After finding the data, format as JSON:
   "employee_count_found": {"amount": "2,500", "source": "LinkedIn"}
 }
 
-Return ALL revenue figures found with sources. Return ONLY valid JSON.`,
+**CRITICAL**: You MUST return valid JSON. Do NOT return explanatory text. Do NOT say you cannot find data.
+If uncertain which entity operates the domain, return the BEST AVAILABLE data (parent company if needed).
+Return ALL revenue figures found with sources. Return ONLY valid JSON, no other text.`,
     temperature: 0.1,
   });
   
