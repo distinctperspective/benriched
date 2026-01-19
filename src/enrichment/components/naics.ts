@@ -72,14 +72,16 @@ Determine the most specific, accurate 2022 six-digit NAICS code(s) for the compa
    - If YES to any: Include appropriate 311xxx or 312xxx manufacturing codes in addition to any retail codes.
 
 4) Mapping to the approved NAICS list:
-   - Use the provided "APPROVED NAICS LIST" as the sole taxonomy. Return only 6-digit 2022 codes and their exact descriptions as listed.
+   - **CRITICAL**: Use ONLY the provided "APPROVED NAICS LIST" below. Return only 6-digit 2022 codes and their exact descriptions as listed.
+   - **DO NOT** use any NAICS codes that are not in the approved list, even if you find them on the web or in your training data.
+   - **BEFORE RETURNING**: Search the approved list below to find the exact code and description that matches the company's activities.
    - For each evidenced business activity, map to ALL applicable NAICS codes that match verified activities. Include codes for:
      * Manufacturing/production activities (if they make/process products)
      * Wholesale/distribution activities (if they distribute to other businesses)
      * Retail/service activities (if they sell directly to consumers)
    - A single company may legitimately have codes across multiple categories (31x, 42x, 72x, etc.).
    - De-duplicate any repeated codes.
-   - If a NAICS code is seen on the web, only accept it if it exactly matches a code+description in the approved list and matches the evidenced activity.
+   - **EXAMPLE**: For a gas station with convenience store, search the approved list for "Gasoline" or "Convenience" and use the EXACT code found (e.g., 457110), NOT any other code like 447110.
 
 5) Last-resort NAICS discovery (only if direct mapping from descriptions to the list is not confident):
    - Step 1 — Derive business function: From verified information already collected, extract a concise generic function (e.g., "manufactures baby food", "wholesale distribution of industrial chemicals").
