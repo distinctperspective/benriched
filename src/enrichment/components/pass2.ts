@@ -4,6 +4,7 @@ import { countryNameToCode } from '../../utils/parsing.js';
 import { calculateAICost } from './pricing.js';
 import { PASS2_PROMPT } from './prompts.js';
 import { VALID_REVENUE_BANDS, PASSING_REVENUE_BANDS, TARGET_REGIONS, normalizeSizeBand, VALID_SIZE_BANDS, getMatchingNaics } from './icp.js';
+import { selectNAICSCodes } from './naics.js';
 
 export interface Pass2WithUsage {
   result: EnrichmentResult;
@@ -105,16 +106,25 @@ export async function pass2_analyzeContentWithUsage(
     const cleanText = text.trim().replace(/^```json?\n?/i, '').replace(/\n?```$/i, '');
     const parsed = JSON.parse(cleanText);
     
-    let naicsCodes: NAICSCode[] = [];
-    if (parsed.naics_codes_6_digit) {
-      if (Array.isArray(parsed.naics_codes_6_digit)) {
-        naicsCodes = parsed.naics_codes_6_digit.map((item: any) => {
-          if (typeof item === 'string') {
-            return { code: item, description: 'Unknown' };
-          }
-          return { code: item.code || '', description: item.description || 'Unknown' };
-        });
-      }
+    // Use comprehensive NAICS selection component
+    const naicsResult = await selectNAICSCodes(
+      domain,
+      companyName,
+      parsed.business_description || '',
+      scrapedContent,
+      model,
+      modelId
+    );
+    
+    const naicsCodes = naicsResult.naicsCodes;
+    
+    // Update AI usage to include NAICS selection cost
+    aiUsage.costUsd += naicsResult.costUsd;
+    
+    // Update quality reasoning for industry
+    if (parsed.quality && parsed.quality.industry) {
+      parsed.quality.industry.confidence = naicsResult.confidence;
+      parsed.quality.industry.reasoning = naicsResult.reasoning;
     }
     
     const targetIcpMatches: TargetICPMatch[] = await getMatchingNaics(naicsCodes);
