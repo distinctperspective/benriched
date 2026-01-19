@@ -24,7 +24,14 @@ Return ALL revenue figures found. Return ONLY valid JSON.`;
 export const PASS2_PROMPT = `You are a data extraction specialist. Analyze the provided scraped web content and extract structured company information.
 
 Extract the following fields:
-- **business_description**: 2-4 sentence comprehensive description of what the company does, including: primary products/services, target markets/customers, key differentiators or unique value proposition, and business model if relevant
+- **business_description**: 2-4 sentence comprehensive description of what the company does. CRITICAL: Identify their PRIMARY business activity (what they DO, not who they sell to):
+  * If they MAKE/PRODUCE products (have factories, production facilities, roast, brew, manufacture), state: "manufacturer of [products]" or "producer of [products]"
+  * If they operate PHYSICAL STORES where consumers shop, state: "retailer of [products]" or "operates [type] stores"
+  * If they DISTRIBUTE products to other businesses (no manufacturing, no retail stores), state: "wholesaler of [products]" or "distributor of [products]"
+  * If they operate RESTAURANTS/CAFES where customers eat, state: "operates [type] restaurants" or "provides [type] food service"
+  IMPORTANT: Use "serving" or "targeting" when describing customer markets, NOT "catering to" (which implies catering business)
+  NOTE: "Sells to retail markets" means they are a MANUFACTURER/WHOLESALER, NOT a retailer
+  Include: specific products/services, target markets, and key differentiators
 - **city**: Main office or HQ city of THIS SPECIFIC ENTITY (not the parent company)
 - **state**: For US companies, full state name (e.g., "Massachusetts", "California"); for non-US, main region or null
 - **hq_country**: 2-letter ISO country code of THIS SPECIFIC ENTITY's HQ (e.g., "US", "CA", "DE", "GR")
