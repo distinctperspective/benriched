@@ -4,6 +4,7 @@ import { logger } from 'hono/logger';
 import healthRoutes from './routes/health.js';
 import enrichRoutes from './routes/enrich.js';
 import personaRoutes from './routes/persona.js';
+import researchRoutes from './routes/research.js';
 import { authMiddleware } from './middleware/auth.js';
 import { rateLimitMiddleware } from './middleware/rateLimit.js';
 
@@ -20,7 +21,8 @@ app.get('/', (c) => {
     endpoints: {
       health: 'GET /health',
       enrich: 'POST /enrich',
-      persona: 'POST /persona'
+      persona: 'POST /persona',
+      research_contact: 'POST /research/contact'
     }
   });
 });
@@ -34,5 +36,9 @@ app.route('/enrich', enrichRoutes);
 app.use('/persona', rateLimitMiddleware);
 app.use('/persona', authMiddleware);
 app.route('/persona', personaRoutes);
+
+app.use('/research', rateLimitMiddleware);
+app.use('/research', authMiddleware);
+app.route('/research', researchRoutes);
 
 export default app;
