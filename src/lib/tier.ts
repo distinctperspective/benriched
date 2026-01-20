@@ -31,9 +31,16 @@ Classify the provided job title into a tier and return a single JSON object with
 
    - Treat matching as case-insensitive using t.
    - For " vp ": ensure it appears with surrounding spaces or clear word boundaries to avoid matching inside other words.
-   - For the downgrade rule: if the title is exactly "associate director" or starts with "associate director" without additional senior modifiers, set Tier 2; otherwise keep Tier 3.
+   - For the downgrade rule: if the title is exactly "associate director" or starts with "associate director" without additional senior modifiers, set Tier 2 (Manager / Recommender); otherwise keep Tier 3 (Strong Owner).
 
-5. Normalized title formatting (preserve acronyms, Title Case otherwise):
+5. IMPORTANT - tierLabel must ALWAYS include the full label with description:
+   - "Tier 4 (Ultimate)" - NOT just "Tier 4"
+   - "Tier 3 (Strong Owner)" - NOT just "Tier 3"
+   - "Tier 2 (Manager / Recommender)" - NOT just "Tier 2"
+   - "Tier 1 (IC / Advisor)" - NOT just "Tier 1"
+   - "Tier 0 (Unknown)" - NOT just "Tier 0"
+
+6. Normalized title formatting (preserve acronyms, Title Case otherwise):
 
    - Start from originalTitle. Split into tokens by spaces and punctuation while preserving punctuation in the final string.
    - If a token is an acronym in the set {CEO, CFO, CTO, CIO, CDO, COO, CPO, CMO, CHRO, SVP, EVP, VP, QA, QC, R&D, FSQA, FSQ, IT, ERP, SQF, SQFI, GFSI, HACCP, BRC, PCQI, SPC} or matches the regex of 2–6 consecutive uppercase letters (including ampersand in R&D), keep it uppercase.
