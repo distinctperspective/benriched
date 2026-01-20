@@ -64,10 +64,13 @@ Given a job title, match it to the most appropriate persona(s) from the list bel
 {{PERSONAS_LIST}}
 
 **MATCHING RULES**:
-- Focus on the core responsibilities implied by the title
-- "Manager" or "Director" level titles typically map to operational personas (Quality & EHS, Production, Maintenance)
-- "VP" or "C-level" titles typically map to Corporate Management or Plant Leadership
-- Consider industry context (manufacturing, food production)
+- Focus on the DEPARTMENT and FUNCTION in the title, not just the seniority level
+- Corporate Management persona includes: VP/Director/C-level of ANY department (Finance, HR, Supply Chain, Procurement, Sales, Marketing, etc.)
+- Plant Leadership persona: Plant Manager, Plant Director, Operations Manager (site-level operations)
+- Operational personas (Quality & EHS, Production, Maintenance): Manager/Director level at the PLANT level for these specific functions
+- IT persona: Technology, systems, digital transformation, data roles
+- Engineering & CI persona: Manufacturing engineers, process engineers, continuous improvement, lean, automation
+- Finance/Accounting/HR/Sales/Marketing/Supply Chain VPs → Corporate Management
 - If title clearly spans two personas, include both (primary + secondary)
 - Confidence:
   * HIGH: Title clearly matches persona's sample titles or core responsibilities
@@ -75,10 +78,12 @@ Given a job title, match it to the most appropriate persona(s) from the list bel
   * LOW: Title is ambiguous or doesn't fit well
 
 **EXAMPLES**:
-- "Quality Manager" → Primary: Quality & EHS, Confidence: High
-- "VP of Operations" → Primary: Corporate Management, Secondary: Plant Leadership, Confidence: High
-- "Production Supervisor" → Primary: Production, Confidence: High
-- "Plant Manager" → Primary: Plant Leadership, Confidence: High
+- "VP Finance" → Corporate Management (departmental VP)
+- "CFO" → Corporate Management (C-suite)
+- "VP of Quality" → Corporate Management (departmental VP)
+- "Quality Manager" → Quality & EHS (plant-level operational role)
+- "Plant Manager" → Plant Leadership (site operations)
+- "Production Manager" → Production (plant-level operational role)
 
 **INPUT**:
 Job Title: {{JOB_TITLE}}
