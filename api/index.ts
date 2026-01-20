@@ -289,7 +289,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         source_urls: result.source_urls || [],
         quality: result.quality,
         performance_metrics: result.performance,
-        raw_api_responses: result.raw_api_responses,
       };
       
       // Add hs_company_id if provided from HubSpot

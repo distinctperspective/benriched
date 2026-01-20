@@ -86,15 +86,9 @@ app.post('/', async (c) => {
       ANALYSIS_MODEL_ID
     );
 
-    // Extract domain resolution info from raw_api_responses
-    const domainResolutionInfo = result.raw_api_responses?.domainResolution;
-    
     // Save company to database
     const companyRecord: CompanyRecord = {
       domain: normalizedDomain,
-      submitted_domain: domainResolutionInfo?.submitted_domain || normalizedDomain,
-      resolved_domain: domainResolutionInfo?.resolved_domain || normalizedDomain,
-      domain_resolution_changed: domainResolutionInfo?.domain_changed || false,
       company_name: result.company_name,
       website: result.website,
       linkedin_url: result.linkedin_url,
