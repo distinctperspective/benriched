@@ -1,6 +1,7 @@
 import { createClient } from '@supabase/supabase-js';
 import { generateText } from 'ai';
 import { gateway } from '@ai-sdk/gateway';
+import { classifyTier, TierClassificationResult } from './tier.js';
 
 const PERSONA_MATCH_PROMPT = `You are a B2B persona matching expert for manufacturing companies.
 
@@ -55,7 +56,15 @@ export interface PersonaMatchResult {
   secondary_persona: any | null;
   confidence: 'high' | 'medium' | 'low';
   reasoning?: string;
+  tier?: string;
+  normalized_title?: string;
   cost?: {
+    inputTokens: number;
+    outputTokens: number;
+    totalTokens: number;
+    costUsd: number;
+  };
+  tier_cost?: {
     inputTokens: number;
     outputTokens: number;
     totalTokens: number;
@@ -84,12 +93,40 @@ export async function matchPersona(
   if (existingTitle && !titleError) {
     console.log(`   ✅ Found exact match in database`);
     
+    // Check if tier is already cached
+    if (existingTitle.tier && existingTitle.normalized_title) {
+      console.log(`   🏆 Tier cached: ${existingTitle.tier}`);
+      return {
+        title,
+        matched_from: 'database',
+        primary_persona: existingTitle.primary,
+        secondary_persona: existingTitle.secondary || null,
+        confidence: 'high',
+        tier: existingTitle.tier,
+        normalized_title: existingTitle.normalized_title,
+      };
+    }
+    
+    // Tier not cached - classify it
+    const tierResult = await classifyTier(title);
+    
+    // Update database with tier
+    await supabase.from('titles')
+      .update({
+        tier: tierResult.tierLabel,
+        normalized_title: tierResult.normalizedTitle
+      })
+      .eq('id', existingTitle.id);
+    
     return {
       title,
       matched_from: 'database',
       primary_persona: existingTitle.primary,
       secondary_persona: existingTitle.secondary || null,
       confidence: 'high',
+      tier: tierResult.tierLabel,
+      normalized_title: tierResult.normalizedTitle,
+      tier_cost: tierResult.cost,
     };
   }
 
@@ -179,6 +216,19 @@ Responsibilities: ${p.responsibilities.substring(0, 200)}...`;
   console.log(`   ⏱️  AI time: ${aiTime}ms`);
   console.log(`   💰 Cost: $${totalCost.toFixed(6)}`);
 
+  // Step 3: Classify tier
+  const tierResult = await classifyTier(title);
+
+  // Update database with tier if saving mapping
+  if (save_mapping) {
+    await supabase.from('titles')
+      .update({
+        tier: tierResult.tierLabel,
+        normalized_title: tierResult.normalizedTitle
+      })
+      .eq('title', title);
+  }
+
   return {
     title,
     matched_from: 'ai',
@@ -186,11 +236,14 @@ Responsibilities: ${p.responsibilities.substring(0, 200)}...`;
     secondary_persona: secondaryPersona,
     confidence: match.confidence,
     reasoning: match.reasoning,
+    tier: tierResult.tierLabel,
+    normalized_title: tierResult.normalizedTitle,
     cost: {
       inputTokens,
       outputTokens,
       totalTokens,
       costUsd: totalCost
-    }
+    },
+    tier_cost: tierResult.cost
   };
 }
