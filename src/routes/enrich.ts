@@ -107,6 +107,7 @@ app.post('/', async (c) => {
       source_urls: result.source_urls || [],
       quality: result.quality,
       performance_metrics: result.performance,
+      last_enriched_at: new Date().toISOString(),
       // Parent company linking
       parent_company_name: result.parent_company_name || null,
       parent_company_domain: result.parent_company_domain || null,
