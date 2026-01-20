@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { enrichDomainWithCost } from '../src/enrichment/enrich.js';
 import { randomUUID } from 'crypto';
 import { matchPersona } from '../src/lib/persona.js';
+import { researchContact } from '../src/lib/research.js';
 
 const SEARCH_MODEL_ID = 'perplexity/sonar-pro';
 const ANALYSIS_MODEL_ID = 'openai/gpt-4o-mini';
@@ -109,105 +110,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const requestStartTime = Date.now();
 
     try {
-      const researchModel = gateway('perplexity/sonar-pro');
-      
-      const { generateText } = await import('ai');
-      
-      const prompt = `# Research a Person for Outbound Sales Personalization
-You are my research assistant for outbound sales personalization.
-
-## TASK
-Given the information I provide about a prospect (name, company, LinkedIn URL), research and return a structured summary that an outbound email–writing assistant can use to generate:
-- A highly targeted intro email
-- A 5-email follow-up cadence
-
-## RESEARCH SOURCES
-Use sources in this priority order:
-1. Prospect's LinkedIn profile
-2. Company website
-3. Credible business databases, news articles, press releases, funding, hiring, or expansion news
-
-If a field is not reasonably available, write \`Unknown\`.  
-Do **not** guess or fabricate details.
-
-## REQUIRED OUTPUT (STRICT)
-Return **only one Markdown code block** containing a **single valid JSON object** with the **exact keys listed below**.
-- No text before or after the code block
-- No markdown inside JSON values
-- Use plain strings and arrays only
-
----
-
-## REQUIRED JSON FIELDS
-
-### Identity
-- "prospect_name": Full name
-- "prospect_title": Current title (include seniority, e.g., "VP of Operations")
-- "prospect_seniority": One of: "C-level", "VP", "Director", "Manager", "IC", "Other" (briefly specify)
-
-### Company
-- "company_name": Full or commonly used company name
-- "industry_segment": Concise industry description, optimized for manufacturing / food & beverage where applicable
-- "company_size_and_profile": Best available snapshot including employee range, revenue band, key locations, primary products
-
-### Context & Timing
-- "known_trigger_or_context": Any concrete, recent trigger that could justify outreach (1–2 concise sentences with source link when possible)
-
-### Role Insight
-- "role_specific_priorities_and_pains": 3–5 concise bullet points describing likely priorities and pains based on title, LinkedIn, and company context
-
-### Voice & Signals
-- "notable_quotes_or_initiatives": 1–3 bullets with short quotes or paraphrases from LinkedIn or press releases (include source links)
-
-### Case Study Targeting
-- "recommended_case_study_filters": Object with "industry_filter", "role_filter", "size_filter", "key_outcome_focus" (1–3 phrases)
-
-### Sources
-- "supporting_links": Array of URLs used, each with a short description
-
----
-
-## IMPORTANT CONSTRAINTS
-- Output **only** the Markdown code block containing the JSON
-- Do **not** generate email copy
-- Do **not** add commentary or explanations
-- Accuracy > completeness
-
----
-
-I will now provide:
-- Prospect name: ${prospect_name}
-- Company name: ${company_name}
-- LinkedIn URL: ${linkedin_url || 'Not provided'}
-
-Use that information to populate the JSON fields exactly as specified.`;
-
-      const result = await generateText({
-        model: researchModel,
-        prompt,
-        temperature: 0.1,
+      // Call shared research function
+      const result = await researchContact({
+        prospect_name,
+        company_name,
+        linkedin_url
       });
-
-      // Extract JSON from markdown code block
-      let researchData;
-      try {
-        const jsonMatch = result.text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-        const jsonString = jsonMatch ? jsonMatch[1].trim() : result.text.trim();
-        researchData = JSON.parse(jsonString);
-      } catch (parseError) {
-        console.error('Failed to parse AI response:', parseError);
-        return res.status(500).json({ 
-          error: 'Failed to parse research results',
-          raw_response: result.text 
-        });
-      }
-
-      const { calculateAICost } = await import('../src/enrichment/components/pricing.js');
-      const cost = calculateAICost(
-        'perplexity/sonar-pro',
-        result.usage.inputTokens,
-        result.usage.outputTokens
-      );
 
       const responseTimeMs = Date.now() - requestStartTime;
 
@@ -218,48 +126,47 @@ Use that information to populate the JSON fields exactly as specified.`;
         request_source: 'api',
         request_type: 'contact-research',
         was_cached: false,
-        cost_usd: cost,
+        cost_usd: result.cost.costUsd,
         response_time_ms: responseTimeMs,
         raw_api_responses: {
-          prompt,
-          response: result.text,
-          parsed: researchData
+          pass1: result.rawResponse,
+          pass2: JSON.stringify(result.data)
         },
         enrichment_cost: {
           ai: {
             pass1: {
               model: 'perplexity/sonar-pro',
-              inputTokens: result.usage.inputTokens,
-              outputTokens: result.usage.outputTokens,
-              totalTokens: result.usage.totalTokens,
-              costUsd: cost
+              inputTokens: result.cost.inputTokens,
+              outputTokens: result.cost.outputTokens,
+              totalTokens: result.cost.totalTokens,
+              costUsd: result.cost.costUsd
             },
             total: {
-              inputTokens: result.usage.inputTokens,
-              outputTokens: result.usage.outputTokens,
-              totalTokens: result.usage.totalTokens,
-              costUsd: cost
+              inputTokens: result.cost.inputTokens,
+              outputTokens: result.cost.outputTokens,
+              totalTokens: result.cost.totalTokens,
+              costUsd: result.cost.costUsd
             }
           },
           total: {
-            costUsd: cost
+            costUsd: result.cost.costUsd
           }
         }
       });
 
       return res.status(200).json({
         success: true,
-        data: researchData,
+        data: result.data,
         metadata: {
           prospect_name,
           company_name,
           linkedin_url: linkedin_url || null,
           tokens: {
-            input: result.usage.inputTokens,
-            output: result.usage.outputTokens,
-            total: result.usage.totalTokens
+            input: result.cost.inputTokens,
+            output: result.cost.outputTokens,
+            total: result.cost.totalTokens
           },
-          cost_usd: cost,
+          cost_usd: result.cost.costUsd,
           response_time_ms: responseTimeMs
         }
       });
