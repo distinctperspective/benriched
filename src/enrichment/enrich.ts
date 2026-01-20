@@ -14,6 +14,7 @@ import { categorizeUrls } from './components/urlCategorization.js';
 import { pass1_identifyUrlsWithUsage, pass1_identifyUrlsStrict, type Pass1WithUsage } from './components/pass1.js';
 import { pass2_analyzeContentWithUsage, type Pass2WithUsage } from './components/pass2.js';
 import { VALID_REVENUE_BANDS, PASSING_REVENUE_BANDS, TARGET_REGIONS } from './components/icp.js';
+import { resolveDomainToWebsite, type DomainResolutionResult } from './components/domainResolver.js';
 
 // Re-export for external use
 export { calculateAICost };
@@ -142,11 +143,21 @@ export async function enrichDomainWithCost(
   // Track costs
   let totalFirecrawlCredits = 0;
   
+  // DOMAIN RESOLUTION: Use Firecrawl search to find actual website if domain is dead/email-only
+  const domainResolution = await resolveDomainToWebsite(domain, firecrawlApiKey);
+  totalFirecrawlCredits += domainResolution.credits_used;
+  
+  // Use resolved domain for enrichment
+  const enrichmentDomain = domainResolution.resolved_domain;
+  if (domainResolution.domain_changed) {
+    console.log(`   🔄 Using resolved domain: ${enrichmentDomain}`);
+  }
+  
   // Track performance
   let pass1StartTime = Date.now();
   
-  // PASS 1: Identify URLs to crawl
-  let { result: pass1Result, usage: pass1Usage, rawResponse: pass1RawResponse } = await pass1_identifyUrlsWithUsage(domain, searchModel, searchModelId);
+  // PASS 1: Identify URLs to crawl (using resolved domain)
+  let { result: pass1Result, usage: pass1Usage, rawResponse: pass1RawResponse } = await pass1_identifyUrlsWithUsage(enrichmentDomain, searchModel, searchModelId);
   const pass1Ms = Date.now() - pass1StartTime;
   console.log(`   📝 Company: ${pass1Result.company_name}`);
   
@@ -683,6 +694,12 @@ export async function enrichDomainWithCost(
   
   // Build raw API responses object
   const raw_api_responses = {
+    domainResolution: {
+      submitted_domain: domainResolution.submitted_domain,
+      resolved_domain: domainResolution.resolved_domain,
+      domain_changed: domainResolution.domain_changed,
+      resolution_method: domainResolution.resolution_method
+    },
     pass1: pass1RawResponse,
     pass2: pass2RawResponse,
     deepResearch: deepResearchResult?.rawResponse

@@ -8,6 +8,9 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 export interface CompanyRecord {
   id?: string;
   domain: string;
+  submitted_domain?: string | null;
+  resolved_domain?: string | null;
+  domain_resolution_changed?: boolean;
   company_name: string | null;
   website: string | null;
   linkedin_url: string | null;
