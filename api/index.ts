@@ -110,12 +110,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const requestStartTime = Date.now();
 
     try {
-      // Call shared research function
+      // Use direct Perplexity API with web_search_options
+      const perplexityApiKey = process.env.PERPLEXITY_API_KEY;
+      
+      if (!perplexityApiKey) {
+        return res.status(500).json({ error: 'Perplexity API key not configured' });
+      }
+
+      // Call shared research function with direct Perplexity API
       const result = await researchContact({
         prospect_name,
         company_name,
         linkedin_url
-      });
+      }, perplexityApiKey);
 
       const responseTimeMs = Date.now() - requestStartTime;
 

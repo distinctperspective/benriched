@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { gateway } from '@ai-sdk/gateway';
 import { saveEnrichmentRequest, EnrichmentRequestRecord } from '../lib/requests.js';
 import { researchContact, ContactResearchRequest } from '../lib/research.js';
 
@@ -7,6 +8,8 @@ const app = new Hono();
 interface ResearchContactRequestBody extends ContactResearchRequest {
   api_key?: string;
 }
+
+const RESEARCH_MODEL_ID = 'perplexity/sonar-pro';
 
 app.post('/contact', async (c) => {
   const requestStartTime = Date.now();
@@ -19,23 +22,23 @@ app.post('/contact', async (c) => {
       return c.json({ error: 'Missing required fields: prospect_name and company_name' }, 400);
     }
 
-    const aiGatewayKey = c.env?.AI_GATEWAY_API_KEY || process.env.AI_GATEWAY_API_KEY;
+    const perplexityApiKey = c.env?.PERPLEXITY_API_KEY || process.env.PERPLEXITY_API_KEY;
     const apiKey = api_key || c.env?.API_KEY || process.env.API_KEY;
 
-    if (!aiGatewayKey) {
-      return c.json({ error: 'AI Gateway API key not configured' }, 500);
+    if (!perplexityApiKey) {
+      return c.json({ error: 'Perplexity API key not configured' }, 500);
     }
 
     if (!apiKey) {
       return c.json({ error: 'API key required' }, 401);
     }
 
-    // Call shared research function
+    // Call shared research function with direct Perplexity API
     const result = await researchContact({
       prospect_name,
       company_name,
       linkedin_url
-    });
+    }, perplexityApiKey);
 
     const responseTimeMs = Date.now() - requestStartTime;
 
