@@ -96,7 +96,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Research contact endpoint
-  if (req.url?.startsWith('/research/contact')) {
+  if (req.url?.includes('/research/contact')) {
     if (req.method !== 'POST') {
       return res.status(405).json({ error: 'Method not allowed. Use POST.' });
     }
