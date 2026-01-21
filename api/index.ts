@@ -101,6 +101,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(405).json({ error: 'Method not allowed. Use POST.' });
     }
 
+    // Auth check
+    const authHeader = req.headers.authorization;
+    const xApiKey = req.headers['x-api-key'] as string;
+    const queryApiKey = req.query?.api_key as string;
+    const bodyApiKey = req.body?.api_key as string;
+    const apiKey = process.env.API_KEY || 'amlink21';
+    
+    const isAuthorized = 
+      authHeader === `Bearer ${apiKey}` ||
+      xApiKey === apiKey ||
+      queryApiKey === apiKey ||
+      bodyApiKey === apiKey;
+    
+    if (!isAuthorized) {
+      return res.status(401).json({ 
+        error: 'Unauthorized',
+        hint: 'Include api_key in body, query, X-API-Key header, or Authorization: Bearer <key>',
+      });
+    }
+
     const { prospect_name, company_name, linkedin_url } = req.body || {};
 
     if (!prospect_name || !company_name) {
