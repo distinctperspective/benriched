@@ -4,6 +4,7 @@ export interface RawApiResponses {
   pass1?: string;
   pass2?: string;
   deepResearch?: string;
+  zoominfo?: any;
 }
 
 export interface EnrichmentCost {
@@ -35,10 +36,10 @@ export interface EnrichmentRequestRecord {
 export async function saveEnrichmentRequest(request: EnrichmentRequestRecord): Promise<{ data: EnrichmentRequestRecord | null; error: any }> {
   const { data, error } = await supabase
     .from('enrichment_requests')
-    .upsert(request, { onConflict: 'hs_company_id' })
+    .insert(request)
     .select()
     .single();
-  
+
   return { data, error };
 }
 

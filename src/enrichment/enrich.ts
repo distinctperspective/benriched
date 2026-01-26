@@ -4,6 +4,7 @@ import { pickRevenueBandFromEvidence, estimateRevenueBandFromEmployeesAndNaics, 
 import { parseRevenueAmountToUsd, parseEmployeeBandLowerBound, countryNameToCode } from '../utils/parsing.js';
 import { detectOutliers, shouldTriggerDeepResearch, runDeepResearch, DeepResearchResult } from './deepResearch.js';
 import { getCompanyByDomain } from '../lib/supabase.js';
+import { SSEEmitter } from '../lib/sseEmitter.js';
 
 // Import from components
 import { calculateAICost } from './components/pricing.js';
@@ -135,17 +136,42 @@ export async function enrichDomainWithCost(
   firecrawlApiKey?: string,
   searchModelId: string = 'perplexity/sonar-pro',
   analysisModelId: string = 'openai/gpt-4o-mini',
-  forceDeepResearch: boolean = false
+  forceDeepResearch: boolean = false,
+  emitter?: SSEEmitter
 ): Promise<EnrichmentResultWithCost> {
   const startTime = Date.now();
   console.log(`\n🚀 Starting enrichment for domain: ${domain}`);
-  
+
+  // Emit initial event
+  await emitter?.emit({
+    stage: 'init',
+    message: `Starting enrichment for ${domain}`,
+    status: 'started'
+  });
+
   // Track costs
   let totalFirecrawlCredits = 0;
-  
+
   // DOMAIN RESOLUTION: Use Firecrawl search to find actual website if domain is dead/email-only
+  await emitter?.emit({
+    stage: 'domain_resolution',
+    message: 'Resolving domain to company website...',
+    status: 'started'
+  });
+
   const domainResolution = await resolveDomainToWebsite(domain, firecrawlApiKey);
   totalFirecrawlCredits += domainResolution.credits_used;
+
+  await emitter?.emit({
+    stage: 'domain_resolution',
+    message: 'Domain resolved',
+    status: 'complete',
+    data: {
+      resolved_domain: domainResolution.resolved_domain,
+      domain_changed: domainResolution.domain_changed
+    },
+    cost: { usd: domainResolution.credits_used * 0.0001 }
+  });
   
   // Use resolved domain for enrichment
   const enrichmentDomain = domainResolution.resolved_domain;
@@ -155,11 +181,29 @@ export async function enrichDomainWithCost(
   
   // Track performance
   let pass1StartTime = Date.now();
-  
+
   // PASS 1: Identify URLs to crawl (using resolved domain)
+  await emitter?.emit({
+    stage: 'pass1_search',
+    message: 'Searching web for company data...',
+    status: 'started',
+    data: { model: 'perplexity/sonar-pro' }
+  });
+
   let { result: pass1Result, usage: pass1Usage, rawResponse: pass1RawResponse } = await pass1_identifyUrlsWithUsage(enrichmentDomain, searchModel, searchModelId);
   const pass1Ms = Date.now() - pass1StartTime;
   console.log(`   📝 Company: ${pass1Result.company_name}`);
+
+  await emitter?.emit({
+    stage: 'pass1_search',
+    message: 'Web search complete',
+    status: 'complete',
+    data: {
+      company_name: pass1Result.company_name,
+      parent_company: pass1Result.parent_company
+    },
+    cost: { usd: pass1Usage.costUsd }
+  });
   
   // Check what data Pass 1 already found (from Perplexity web search)
   const hasRevenue = Array.isArray(pass1Result.revenue_found) && pass1Result.revenue_found.length > 0;
@@ -174,11 +218,19 @@ export async function enrichDomainWithCost(
   // DEEP RESEARCH: Check for outliers and run focused queries if needed
   let deepResearchResult: DeepResearchResult | null = null;
   const outlierFlags = detectOutliers(pass1Result);
-  
+
   if (forceDeepResearch || shouldTriggerDeepResearch(outlierFlags)) {
     if (forceDeepResearch) {
       console.log(`\n🔬 Deep Research FORCED by request parameter`);
     }
+
+    await emitter?.emit({
+      stage: 'deep_research',
+      message: 'Running deep research queries...',
+      status: 'started',
+      data: { reasons: Object.keys(outlierFlags).filter(k => outlierFlags[k as keyof typeof outlierFlags]) }
+    });
+
     deepResearchResult = await runDeepResearch(
       domain,
       pass1Result.company_name,
@@ -186,6 +238,13 @@ export async function enrichDomainWithCost(
       searchModelId,
       outlierFlags
     );
+
+    await emitter?.emit({
+      stage: 'deep_research',
+      message: 'Deep research complete',
+      status: 'complete',
+      cost: { usd: deepResearchResult.usage?.costUsd || 0 }
+    });
     
     // Merge deep research results into pass1Result
     if (deepResearchResult.revenue?.amount) {
@@ -229,12 +288,18 @@ export async function enrichDomainWithCost(
   }
   
   // SMART SCRAPING: Categorize URLs by priority
+  await emitter?.emit({
+    stage: 'url_selection',
+    message: 'Selecting URLs to scrape...',
+    status: 'started'
+  });
+
   const { tier1, tier2, tier3 } = categorizeUrls(pass1Result.urls_to_crawl, domain);
   console.log(`   🔗 URLs by tier: T1=${tier1.length} (essential), T2=${tier2.length} (data), T3=${tier3.length} (other)`);
-  
+
   // Always scrape Tier 1 (company site + LinkedIn)
   let urlsToScrape = [...tier1];
-  
+
   // Conditionally add Tier 2 based on what Pass 1 found
   if (hasRevenue && hasEmployees) {
     console.log(`   ⏭️  Skipping Tier 2 sources (Pass 1 has revenue + employees)`);
@@ -249,13 +314,27 @@ export async function enrichDomainWithCost(
     urlsToScrape.push(...tier2Limited);
     console.log(`   ➕ Adding ${tier2Limited.length} Tier 2 sources (missing both revenue + employees)`);
   }
-  
+
   // Skip Tier 3 entirely - low value (Wikipedia, Glassdoor, Indeed)
   console.log(`   ⏭️  Skipping ${tier3.length} Tier 3 sources (low value)`);
-  
+
+  await emitter?.emit({
+    stage: 'url_selection',
+    message: 'URLs selected',
+    status: 'complete',
+    data: { urls_to_scrape: urlsToScrape.length }
+  });
+
   // SCRAPE: Use Firecrawl to scrape prioritized URLs
   const scrapeStartTime = Date.now();
   console.log(`\n🔥 Scraping ${urlsToScrape.length} URLs with Firecrawl...`);
+
+  await emitter?.emit({
+    stage: 'scraping',
+    message: `Scraping ${urlsToScrape.length} URLs...`,
+    status: 'started'
+  });
+
   let scrapeResult = await scrapeMultipleUrlsWithCost(urlsToScrape, firecrawlApiKey);
   let scrapedContent = scrapeResult.content;
   totalFirecrawlCredits += scrapeResult.totalCreditsUsed;
@@ -263,9 +342,34 @@ export async function enrichDomainWithCost(
   let scrapeCount = scrapeResult.scrapeCount;
   console.log(`   ✅ Successfully scraped ${scrapedContent.size} pages (${scrapeResult.totalCreditsUsed} credits) in ${scrapingMs}ms`);
 
+  await emitter?.emit({
+    stage: 'scraping',
+    message: 'Scraping complete',
+    status: 'complete',
+    data: {
+      pages_scraped: scrapedContent.size,
+      credits_used: scrapeResult.totalCreditsUsed
+    },
+    cost: { usd: scrapeResult.totalCreditsUsed * 0.0001 }
+  });
+
+  // ENTITY VALIDATION: Check if company name matches domain
+  await emitter?.emit({
+    stage: 'entity_validation',
+    message: 'Validating company identity...',
+    status: 'started'
+  });
+
   const entityCheck = detectEntityMismatch(pass1Result.company_name, domain, scrapedContent);
   if (entityCheck.mismatch) {
     console.log(`\n⚠️  Potential entity mismatch detected (${entityCheck.signal}). Re-running Pass 1 in strict mode...`);
+
+    await emitter?.emit({
+      stage: 'entity_validation',
+      message: 'Re-validating with strict mode...',
+      status: 'started'
+    });
+
     // Preserve original revenue/employee data before strict mode overwrites
     const originalRevenueFound = pass1Result.revenue_found;
     const originalEmployeeFound = pass1Result.employee_count_found;
@@ -295,8 +399,27 @@ export async function enrichDomainWithCost(
     console.log(`\n🔥 Re-scraping ${pass1Result.urls_to_crawl.length} URLs with Firecrawl...`);
     scrapedContent = await scrapeMultipleUrls(pass1Result.urls_to_crawl, firecrawlApiKey);
     console.log(`   ✅ Successfully scraped ${scrapedContent.size} pages`);
+
+    await emitter?.emit({
+      stage: 'entity_validation',
+      message: 'Entity re-validated in strict mode',
+      status: 'complete'
+    });
+  } else {
+    await emitter?.emit({
+      stage: 'entity_validation',
+      message: 'Entity validated',
+      status: 'complete'
+    });
   }
-  
+
+  // LINKEDIN VALIDATION: Extract and validate LinkedIn URL
+  await emitter?.emit({
+    stage: 'linkedin_validation',
+    message: 'Extracting LinkedIn profile...',
+    status: 'started'
+  });
+
   // Extract LinkedIn from scraped content - prioritize company website
   let linkedinFromScrape: string | null = null;
   let linkedinSource: 'website' | 'pass1' | null = null;
@@ -410,12 +533,41 @@ export async function enrichDomainWithCost(
       console.log(`   ⚠️  No employee count found in scraped content`);
     }
   }
-  
+
+  await emitter?.emit({
+    stage: 'linkedin_validation',
+    message: 'LinkedIn validation complete',
+    status: 'complete',
+    data: { linkedin_url: linkedinFromScrape || undefined }
+  });
+
+  // PASS 2: Analyze content with AI
+  await emitter?.emit({
+    stage: 'pass2_analysis',
+    message: 'Analyzing content with AI...',
+    status: 'started',
+    data: { model: 'openai/gpt-4o-mini' }
+  });
+
   const pass2StartTime = Date.now();
   const { result: pass2Result, usage: pass2Usage, rawResponse: pass2RawResponse } = await pass2_analyzeContentWithUsage(domain, pass1Result.company_name, scrapedContent, analysisModel, pass1Result, analysisModelId);
   const pass2Ms = Date.now() - pass2StartTime;
   let result = pass2Result;
-  
+
+  await emitter?.emit({
+    stage: 'pass2_analysis',
+    message: 'Content analysis complete',
+    status: 'complete',
+    cost: { usd: pass2Usage.costUsd }
+  });
+
+  // DATA ESTIMATION: Estimate missing revenue and size
+  await emitter?.emit({
+    stage: 'data_estimation',
+    message: 'Estimating revenue and employee data...',
+    status: 'started'
+  });
+
   // Add deep research info to diagnostics
   const deepResearchTriggered = forceDeepResearch || shouldTriggerDeepResearch(outlierFlags);
   if (result.diagnostics) {
@@ -571,9 +723,24 @@ export async function enrichDomainWithCost(
   const isTargetRegionFinal = targetRegionsFinal.has(result.hq_country) || result.is_us_hq || result.is_us_subsidiary;
   result.target_icp = (result.target_icp_matches?.length > 0) && isTargetRegionFinal && hasPassingRevenueFinal;
 
+  await emitter?.emit({
+    stage: 'data_estimation',
+    message: 'Data estimation complete',
+    status: 'complete',
+    data: {
+      company_revenue: result.company_revenue,
+      company_size: result.company_size
+    }
+  });
+
   // ============================================================================
   // PARENT COMPANY ENRICHMENT - Inherit data from parent when child has no data
   // ============================================================================
+  await emitter?.emit({
+    stage: 'parent_enrichment',
+    message: 'Checking parent company data...',
+    status: 'started'
+  });
   const parentCompanyName = pass1Result.parent_company;
   const childHasWeakData = !result.company_revenue || !hasPassingRevenueFinal || 
     result.company_size === 'unknown' || result.company_size === '0-1 Employees' || 
@@ -637,6 +804,31 @@ export async function enrichDomainWithCost(
       result.parent_company_name = parentCompanyName;
     }
   }
+
+  if (!parentCompanyName || !childHasWeakData) {
+    await emitter?.emit({
+      stage: 'parent_enrichment',
+      message: 'No parent enrichment needed',
+      status: 'complete'
+    });
+  } else {
+    await emitter?.emit({
+      stage: 'parent_enrichment',
+      message: 'Parent enrichment complete',
+      status: 'complete',
+      data: {
+        inherited_revenue: result.inherited_revenue || false,
+        inherited_size: result.inherited_size || false
+      }
+    });
+  }
+
+  // FINAL ASSEMBLY: Calculate costs
+  await emitter?.emit({
+    stage: 'final_assembly',
+    message: 'Calculating costs and assembling data...',
+    status: 'started'
+  });
 
   // Build cost breakdown
   const firecrawlCost = calculateFirecrawlCost(totalFirecrawlCredits);
@@ -704,6 +896,13 @@ export async function enrichDomainWithCost(
     pass2: pass2RawResponse,
     deepResearch: deepResearchResult?.rawResponse
   };
+
+  await emitter?.emit({
+    stage: 'final_assembly',
+    message: 'Final assembly complete',
+    status: 'complete',
+    cost: { usd: totalCost }
+  });
 
   return { ...result, cost, performance, raw_api_responses };
 }
