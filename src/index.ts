@@ -9,7 +9,12 @@ import { rateLimitMiddleware } from './middleware/rateLimit.js';
 const app = new Hono();
 
 app.use(logger());
-app.use(cors());
+
+// CORS: Only apply in development, skip on Vercel (it has its own CORS handling)
+const isDev = process.env.NODE_ENV !== 'production';
+if (isDev) {
+  app.use(cors());
+}
 
 // Root endpoint
 app.get('/', (c) => {
