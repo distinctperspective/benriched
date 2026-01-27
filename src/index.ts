@@ -8,15 +8,11 @@ import { rateLimitMiddleware } from './middleware/rateLimit.js';
 
 const app = new Hono();
 
-// Logger: Skip on Vercel where it may cause issues with Hono's runtime expectations
+// Skip problematic Hono middleware on Vercel - use minimal setup for compatibility
 const isVercel = process.env.VERCEL === '1';
+
 if (!isVercel) {
   app.use(logger());
-}
-
-// CORS: Only apply in development, skip on Vercel (it has its own CORS handling)
-const isDev = process.env.NODE_ENV !== 'production';
-if (isDev) {
   app.use(cors());
 }
 
