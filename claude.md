@@ -110,88 +110,112 @@ All endpoints require authentication via one of these methods:
 
 ## Server-Sent Events (SSE) Streaming
 
-The `/enrich` endpoint supports optional real-time progress streaming via Server-Sent Events (SSE). This allows clients to track enrichment progress during the 30-40 second process.
+The `/v1/enrich/company` endpoint supports optional real-time progress streaming via Server-Sent Events (SSE). This allows clients to track enrichment progress in real-time during the 30-40 second enrichment process.
 
-### Streaming Endpoint
+**For comprehensive SSE documentation including:** event format, payload structure, 14 stages, React examples, and more detailed JavaScript examples, see [docs/API.md - Server-Sent Events (SSE) Streaming](docs/API.md#server-sent-events-sse-streaming).
 
-**Enable streaming by adding `?stream=true` query parameter:**
+### Quick Start
+
+Enable streaming by adding `?stream=true` query parameter to the request:
 
 ```bash
-curl -N -X POST "https://benriched.vercel.app/enrich?stream=true" \
+# Non-streaming (standard JSON response)
+curl -X POST "https://benriched.vercel.app/v1/enrich/company" \
+  -H "Authorization: Bearer amlink21" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: amlink21" \
+  -d '{"domain": "lincolnpremiumpoultry.com"}'
+
+# Streaming (real-time progress events)
+curl -N -X POST "https://benriched.vercel.app/v1/enrich/company?stream=true" \
+  -H "Authorization: Bearer amlink21" \
+  -H "Content-Type: application/json" \
   -d '{"domain": "lincolnpremiumpoultry.com"}'
 ```
 
 The `-N` flag in curl disables buffering for real-time output.
 
-### Stream Events
+### Event Format
 
-Each event is in SSE format with these fields:
+Each SSE event has:
 - **id**: Unique event identifier (UUID)
 - **event**: Type ("progress", "complete", or "error")
-- **data**: Event payload with stage info, timing, cost, etc.
+- **data**: Event payload (JSON) with stage, message, timing, cost, etc.
 
-**Example event:**
 ```
 id: 550e8400-e29b-41d4-a716-446655440000
 event: progress
-data: {"stage":"pass1_search","message":"Searching web for company data...","status":"started","timestamp":"2026-01-25T10:30:00.000Z","timing":{"elapsed_ms":450}}
+data: {"stage":"pass1_search","message":"Web search complete","status":"complete","timestamp":"2026-01-25T10:30:02.000Z","timing":{"elapsed_ms":2000},"cost":{"usd":0.0203}}
 ```
 
-### Streamed Stages
+### Enrichment Stages
 
-14 major stages emit progress events:
+14 stages emit progress events during enrichment:
 
-| Stage | Description |
-|-------|-------------|
-| cache_check | Checking for cached data |
-| domain_resolution | Resolving domain to company website |
-| pass1_search | Web search with Perplexity Sonar Pro |
-| deep_research | Deep research queries (conditional) |
-| url_selection | Selecting URLs to scrape |
-| scraping | Scraping content with Firecrawl |
-| entity_validation | Validating company identity |
-| linkedin_validation | Extracting and validating LinkedIn |
-| pass2_analysis | Content analysis with GPT-4o-mini |
-| data_estimation | Estimating revenue and employee size |
-| parent_enrichment | Checking parent company data (conditional) |
-| final_assembly | Calculating costs and assembling data |
-| database_save | Saving to database |
-| complete | Final completion event with full enrichment data |
+| Stage | Type | Description |
+|-------|------|-------------|
+| cache_check | Check | Checking for cached company data |
+| domain_resolution | API | Resolving domain to company website |
+| pass1_search | AI | Web search with Perplexity Sonar Pro |
+| deep_research | AI | Deep research (triggered if outliers detected) |
+| url_selection | Process | Selecting URLs to scrape |
+| scraping | API | Scraping with Firecrawl |
+| entity_validation | Process | Validating company identity |
+| linkedin_validation | Extract | Extracting and validating LinkedIn profile |
+| pass2_analysis | AI | Content analysis with GPT-4o-mini |
+| data_estimation | Process | Estimating revenue and employee data |
+| parent_enrichment | Process | Parent company data inheritance (conditional) |
+| final_assembly | Process | Calculating total costs |
+| database_save | Database | Saving enrichment results to database |
+| complete | Done | Final completion event with full data |
 
 ### JavaScript EventSource Example
 
 ```javascript
+const domain = 'lincolnpremiumpoultry.com';
+const apiKey = 'amlink21';
+
 const eventSource = new EventSource(
-  'https://benriched.vercel.app/enrich?stream=true&domain=example.com&api_key=amlink21'
+  `https://benriched.vercel.app/v1/enrich/company?stream=true&domain=${domain}&api_key=${apiKey}`
 );
 
+// Listen for progress updates
 eventSource.addEventListener('progress', (event) => {
   const data = JSON.parse(event.data);
-  console.log(`[${data.stage}] ${data.message} (${data.timing.elapsed_ms}ms)`);
-  // Update UI with progress bar
+  console.log(`[${data.stage}] ${data.message}`);
+
+  if (data.timing) {
+    console.log(`⏱️  ${data.timing.elapsed_ms}ms`);
+  }
+
+  if (data.cost) {
+    console.log(`💰 $${data.cost.usd.toFixed(4)}`);
+  }
 });
 
+// Listen for completion
 eventSource.addEventListener('complete', (event) => {
   const data = JSON.parse(event.data);
-  console.log('Enrichment complete!', data.data);
-  console.log('Total cost: $' + data.cost.usd.toFixed(4));
+  console.log('✅ Enrichment complete!');
+  console.log('Company:', data.data.company_name);
+  console.log('Total cost:', `$${data.cost.usd.toFixed(4)}`);
   eventSource.close();
 });
 
+// Listen for errors
 eventSource.addEventListener('error', (event) => {
-  console.error('Enrichment failed:', JSON.parse(event.data).message);
+  const data = JSON.parse(event.data);
+  console.error(`❌ ${data.message}`);
   eventSource.close();
 });
 ```
 
 ### Backwards Compatibility
 
-- **Streaming is opt-in** via `?stream=true` query parameter
-- **Non-streaming mode unchanged** - requests without the parameter return standard JSON response
-- **Zero breaking changes** - all existing API clients continue to work
-- **Performance impact** - less than 5ms overhead per event
+- **Streaming is opt-in** via `?stream=true` query parameter (default: false)
+- **Non-streaming mode unchanged** - all existing API clients continue to work without modification
+- **Zero breaking changes** - legacy `/enrich` endpoint also supports `?stream=true`
+- **Identical results** - both modes produce identical final enrichment data
+- **Performance overhead** - less than 5ms per event
 
 ---
 

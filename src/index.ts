@@ -43,26 +43,32 @@ app.get('/', (c) => {
   });
 });
 
-// Mount v1 routes with auth middleware (except health)
-app.use('/v1/enrich/*', rateLimitMiddleware);
-app.use('/v1/enrich/*', authMiddleware);
-app.use('/v1/research/*', rateLimitMiddleware);
-app.use('/v1/research/*', authMiddleware);
-app.use('/v1/match/*', rateLimitMiddleware);
-app.use('/v1/match/*', authMiddleware);
-app.use('/v1/generate/*', rateLimitMiddleware);
-app.use('/v1/generate/*', authMiddleware);
-app.route('/v1', v1Routes);
+// Skip middleware on Vercel - it has incompatibility with Hono's middleware on Vercel runtime
+const isVercel = !!process.env.VERCEL;
 
-// Mount legacy routes with auth middleware (except health)
-app.use('/enrich*', rateLimitMiddleware);
-app.use('/enrich*', authMiddleware);
-app.use('/persona*', rateLimitMiddleware);
-app.use('/persona*', authMiddleware);
-app.use('/research*', rateLimitMiddleware);
-app.use('/research*', authMiddleware);
-app.use('/outreach*', rateLimitMiddleware);
-app.use('/outreach*', authMiddleware);
+if (!isVercel) {
+  // Mount v1 routes with auth middleware (except health)
+  app.use('/v1/enrich/*', rateLimitMiddleware);
+  app.use('/v1/enrich/*', authMiddleware);
+  app.use('/v1/research/*', rateLimitMiddleware);
+  app.use('/v1/research/*', authMiddleware);
+  app.use('/v1/match/*', rateLimitMiddleware);
+  app.use('/v1/match/*', authMiddleware);
+  app.use('/v1/generate/*', rateLimitMiddleware);
+  app.use('/v1/generate/*', authMiddleware);
+
+  // Mount legacy routes with auth middleware (except health)
+  app.use('/enrich*', rateLimitMiddleware);
+  app.use('/enrich*', authMiddleware);
+  app.use('/persona*', rateLimitMiddleware);
+  app.use('/persona*', authMiddleware);
+  app.use('/research*', rateLimitMiddleware);
+  app.use('/research*', authMiddleware);
+  app.use('/outreach*', rateLimitMiddleware);
+  app.use('/outreach*', authMiddleware);
+}
+
+app.route('/v1', v1Routes);
 app.route('/', legacyRoutes);
 
 export default app;

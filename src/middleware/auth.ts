@@ -6,11 +6,11 @@ const VALID_API_KEYS = ['amlink21'];
 export async function authMiddleware(c: Context, next: Next) {
   // Check query parameter first (e.g., ?api_key=amlink21)
   const queryApiKey = c.req.query('api_key');
-  
+
   // Then check Authorization header
   const authHeader = c.req.header('Authorization');
   let headerToken: string | null = null;
-  
+
   if (authHeader) {
     const [scheme, token] = authHeader.split(' ');
     if (scheme === 'Bearer' && token) {

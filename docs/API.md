@@ -34,6 +34,288 @@ curl -H "X-API-Key: amlink21" ...
 
 ---
 
+## Server-Sent Events (SSE) Streaming
+
+The `/v1/enrich/company` endpoint supports real-time progress streaming using Server-Sent Events (SSE). This allows you to monitor the enrichment process as it happens, which is useful for long-running enrichments (30-40 seconds).
+
+### Enabling Streaming
+
+Add `?stream=true` to the request URL:
+
+```bash
+curl -N -X POST "https://benriched.vercel.app/v1/enrich/company?stream=true" \
+  -H "Authorization: Bearer amlink21" \
+  -H "Content-Type: application/json" \
+  -d '{"domain": "lincolnpremiumpoultry.com"}'
+```
+
+Note: Use `-N` flag with curl to disable buffering and see events in real-time.
+
+### Event Format
+
+Each SSE event has this structure:
+
+```
+id: {unique-uuid}
+event: {event-type}
+data: {json-payload}
+
+```
+
+**Event Types:**
+- `progress` - Stage started or completed
+- `complete` - Enrichment finished successfully
+- `error` - Error occurred during enrichment
+
+### Event Payload
+
+**Progress Event:**
+```json
+{
+  "stage": "pass1_search",
+  "message": "Web search complete",
+  "status": "complete",
+  "timestamp": "2026-01-25T10:30:02.000Z",
+  "timing": {
+    "elapsed_ms": 2000,
+    "estimated_remaining_ms": 30000
+  },
+  "cost": {
+    "usd": 0.0203
+  },
+  "data": {
+    "company_name": "Example Inc",
+    "parent_company": null
+  }
+}
+```
+
+**Complete Event:**
+```json
+{
+  "stage": "complete",
+  "message": "Enrichment complete",
+  "status": "complete",
+  "timestamp": "2026-01-25T10:30:25.000Z",
+  "timing": {
+    "elapsed_ms": 25000
+  },
+  "cost": {
+    "usd": 0.0456
+  },
+  "data": {
+    "id": "9a88c622-dd1d-4e35-9cd3-0cb5cc93543f",
+    "domain": "example.com",
+    "company_name": "Example Inc",
+    ...
+  }
+}
+```
+
+**Error Event:**
+```json
+{
+  "stage": "error",
+  "message": "Failed to access domain",
+  "status": "error",
+  "timestamp": "2026-01-25T10:30:05.000Z",
+  "timing": {
+    "elapsed_ms": 5000
+  }
+}
+```
+
+### Enrichment Stages
+
+The following 14 stages are emitted during enrichment:
+
+| Stage | Description | Emits Cost? |
+|-------|-------------|-------------|
+| `cache_check` | Checking for cached company data | No |
+| `domain_resolution` | Resolving domain to company website | Yes |
+| `pass1_search` | Web search with Perplexity Sonar Pro | Yes |
+| `deep_research` | Deep research queries (conditional, if outliers detected) | Yes |
+| `url_selection` | Selecting URLs to scrape | No |
+| `scraping` | Scraping with Firecrawl | Yes |
+| `entity_validation` | Validating company identity | No |
+| `linkedin_validation` | Extracting and validating LinkedIn profile | No |
+| `pass2_analysis` | Content analysis with GPT-4o-mini | Yes |
+| `data_estimation` | Estimating revenue and employee data | No |
+| `parent_enrichment` | Parent company data inheritance (conditional) | No |
+| `final_assembly` | Calculating costs and assembling data | No |
+| `database_save` | Saving to database | No |
+| `complete` | Enrichment finished | Yes (total) |
+
+### JavaScript EventSource Example
+
+```javascript
+const domain = 'lincolnpremiumpoultry.com';
+const eventSource = new EventSource(
+  `https://benriched.vercel.app/v1/enrich/company?stream=true&domain=${domain}&api_key=amlink21`
+);
+
+// Listen for progress events
+eventSource.addEventListener('progress', (event) => {
+  const data = JSON.parse(event.data);
+
+  console.log(`[${data.stage}] ${data.message}`);
+  console.log(`⏱️  Elapsed: ${data.timing.elapsed_ms}ms`);
+
+  if (data.cost) {
+    console.log(`💰 Cost: $${data.cost.usd.toFixed(4)}`);
+  }
+
+  // Update UI progress bar
+  updateProgressBar(data.stage, data.timing.elapsed_ms);
+});
+
+// Listen for completion
+eventSource.addEventListener('complete', (event) => {
+  const data = JSON.parse(event.data);
+
+  console.log('✅ Enrichment complete!');
+  console.log(`Total cost: $${data.cost.usd.toFixed(4)}`);
+  console.log('Data:', data.data);
+
+  // Display results in UI
+  displayResults(data.data);
+
+  // Close connection
+  eventSource.close();
+});
+
+// Listen for errors
+eventSource.addEventListener('error', (event) => {
+  const data = JSON.parse(event.data);
+
+  console.error(`❌ ${data.message}`);
+
+  // Close connection
+  eventSource.close();
+});
+
+// Handle connection errors
+eventSource.onerror = (error) => {
+  console.error('SSE connection failed:', error);
+  eventSource.close();
+};
+```
+
+### React Streaming Example
+
+```jsx
+import { useEffect, useState } from 'react';
+
+export function CompanyEnrichment({ domain, apiKey }) {
+  const [status, setStatus] = useState('idle');
+  const [progress, setProgress] = useState([]);
+  const [result, setResult] = useState(null);
+  const [cost, setCost] = useState(0);
+
+  useEffect(() => {
+    if (status !== 'enriching') return;
+
+    const eventSource = new EventSource(
+      `https://benriched.vercel.app/v1/enrich/company?stream=true&domain=${domain}&api_key=${apiKey}`
+    );
+
+    eventSource.addEventListener('progress', (event) => {
+      const data = JSON.parse(event.data);
+      setProgress((prev) => [...prev, data]);
+      if (data.cost) setCost(data.cost.usd);
+    });
+
+    eventSource.addEventListener('complete', (event) => {
+      const data = JSON.parse(event.data);
+      setProgress((prev) => [...prev, data]);
+      setResult(data.data);
+      setCost(data.cost.usd);
+      setStatus('complete');
+      eventSource.close();
+    });
+
+    eventSource.addEventListener('error', (event) => {
+      const data = JSON.parse(event.data);
+      setProgress((prev) => [...prev, data]);
+      setStatus('error');
+      eventSource.close();
+    });
+
+    return () => eventSource.close();
+  }, [status, domain, apiKey]);
+
+  return (
+    <div>
+      <button
+        onClick={() => setStatus('enriching')}
+        disabled={status !== 'idle'}
+      >
+        {status === 'idle' ? 'Enrich' : status === 'enriching' ? 'Enriching...' : 'Done'}
+      </button>
+
+      <div className="progress">
+        {progress.map((event, idx) => (
+          <div key={idx} className={`event event-${event.status}`}>
+            <strong>[{event.stage}]</strong> {event.message}
+            {event.cost && <span> • ${event.cost.usd.toFixed(4)}</span>}
+          </div>
+        ))}
+      </div>
+
+      {result && (
+        <div className="results">
+          <h3>{result.company_name}</h3>
+          <p>Revenue: {result.company_revenue}</p>
+          <p>Employees: {result.company_size}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+```
+
+### cURL Streaming Example
+
+```bash
+# Stream enrichment progress in real-time
+curl -N -X POST "https://benriched.vercel.app/v1/enrich/company?stream=true" \
+  -H "Authorization: Bearer amlink21" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "domain": "lincolnpremiumpoultry.com",
+    "hs_company_id": "123456"
+  }'
+```
+
+Output (line by line as events arrive):
+```
+id: 550e8400-e29b-41d4-a716-446655440000
+event: progress
+data: {"stage":"cache_check","message":"Checking for cached data...","status":"started","timestamp":"2026-01-25T10:30:00.000Z","timing":{"elapsed_ms":0}}
+
+id: 550e8400-e29b-41d4-a716-446655440001
+event: progress
+data: {"stage":"pass1_search","message":"Web search complete","status":"complete","timestamp":"2026-01-25T10:30:02.000Z","timing":{"elapsed_ms":2000},"cost":{"usd":0.0203}}
+
+...
+
+id: 550e8400-e29b-41d4-a716-446655440012
+event: complete
+data: {"stage":"complete","message":"Enrichment complete","status":"complete","timestamp":"2026-01-25T10:30:25.000Z","timing":{"elapsed_ms":25000},"cost":{"usd":0.0456},"data":{...}}
+```
+
+### Backwards Compatibility
+
+**Important:** Streaming is completely optional and fully backwards compatible.
+
+- Without `?stream=true`: Returns standard JSON response immediately (existing behavior)
+- With `?stream=true`: Returns SSE stream with real-time progress updates
+- Both modes share identical enrichment logic and produce identical final results
+
+All existing API clients continue to work unchanged. Streaming is an opt-in feature.
+
+---
+
 ## Endpoints
 
 ### 1. GET / (Root)
@@ -101,8 +383,11 @@ curl https://benriched.vercel.app/v1/health
 ### 3. POST /v1/enrich/company
 Enrich a company by domain with detailed business intelligence data.
 
+**Streaming Support:** This endpoint supports real-time progress streaming via Server-Sent Events. Add `?stream=true` to enable. See [Server-Sent Events (SSE) Streaming](#server-sent-events-sse-streaming) section for details.
+
 **Request:**
 ```bash
+# Standard (non-streaming) request
 curl -X POST https://benriched.vercel.app/v1/enrich/company \
   -H "Authorization: Bearer amlink21" \
   -H "Content-Type: application/json" \
@@ -110,6 +395,15 @@ curl -X POST https://benriched.vercel.app/v1/enrich/company \
     "domain": "lincolnpremiumpoultry.com",
     "hs_company_id": "123456",
     "force_refresh": false
+  }'
+
+# Streaming request - see real-time progress
+curl -N -X POST "https://benriched.vercel.app/v1/enrich/company?stream=true" \
+  -H "Authorization: Bearer amlink21" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "domain": "lincolnpremiumpoultry.com",
+    "hs_company_id": "123456"
   }'
 ```
 
