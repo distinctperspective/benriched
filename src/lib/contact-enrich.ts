@@ -69,6 +69,8 @@ export interface ContactEnrichResponse {
   };
   rawResponse?: any;
   hubspot_updated?: boolean;
+  hubspot_created?: boolean;
+  hubspot_contact_id?: string;
 }
 
 export async function enrichContactWithZoomInfo(
@@ -298,19 +300,16 @@ export async function enrichContactWithZoomInfo(
 }
 
 /**
- * Update a HubSpot contact with enriched data
+ * Build HubSpot properties object from contact data
+ * Shared between update and create functions
  */
-async function updateHubSpotContact(
-  contactId: string,
+function buildHubSpotProperties(
   contactData: Partial<ContactRecord>,
-  zoomInfoPersonId: string,
-  hubspotToken: string
-): Promise<boolean> {
-  console.log(`   📤 Updating HubSpot contact ${contactId}...`);
-
-  // Map our fields to HubSpot properties
+  zoomInfoPersonId: string
+): Record<string, string> {
   const hubspotProperties: Record<string, string> = {};
 
+  // Contact data fields
   if (contactData.first_name) hubspotProperties.firstname = contactData.first_name;
   if (contactData.last_name) hubspotProperties.lastname = contactData.last_name;
   if (contactData.full_name) hubspotProperties.full_name = contactData.full_name;
@@ -320,6 +319,28 @@ async function updateHubSpotContact(
   if (contactData.cell_phone) hubspotProperties.mobilephone = contactData.cell_phone;
   if (contactData.linked_profile_url) hubspotProperties.boomerang_linkedin_url = contactData.linked_profile_url;
   hubspotProperties.zoom_individual_id = zoomInfoPersonId;
+
+  // Source attribution fields (ZoomInfo enrichment = offline source)
+  hubspotProperties.hs_analytics_source = 'OFFLINE';
+  hubspotProperties.hs_lead_status = 'NEW';
+  hubspotProperties.lifecyclestage = 'lead';
+
+  return hubspotProperties;
+}
+
+/**
+ * Update a HubSpot contact with enriched data
+ * Sets source attribution fields for tracking where the contact data came from
+ */
+async function updateHubSpotContact(
+  contactId: string,
+  contactData: Partial<ContactRecord>,
+  zoomInfoPersonId: string,
+  hubspotToken: string
+): Promise<boolean> {
+  console.log(`   📤 Updating HubSpot contact ${contactId}...`);
+
+  const hubspotProperties = buildHubSpotProperties(contactData, zoomInfoPersonId);
 
   try {
     const response = await fetch(
@@ -344,6 +365,97 @@ async function updateHubSpotContact(
     return true;
   } catch (error) {
     console.error(`   ❌ HubSpot update error:`, error);
+    return false;
+  }
+}
+
+/**
+ * Create a new HubSpot contact with enriched data
+ * Returns the new HubSpot contact ID if successful, null otherwise
+ */
+async function createHubSpotContact(
+  contactData: Partial<ContactRecord>,
+  zoomInfoPersonId: string,
+  hubspotToken: string,
+  hsCompanyId?: string
+): Promise<string | null> {
+  console.log(`   📤 Creating new HubSpot contact...`);
+
+  // Email is required for HubSpot contacts
+  if (!contactData.email_address) {
+    console.error(`   ❌ Cannot create HubSpot contact without email`);
+    return null;
+  }
+
+  const hubspotProperties = buildHubSpotProperties(contactData, zoomInfoPersonId);
+
+  try {
+    const response = await fetch(
+      'https://api.hubapi.com/crm/v3/objects/contacts',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${hubspotToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ properties: hubspotProperties }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`   ❌ HubSpot create failed: ${response.status} - ${errorText}`);
+      return null;
+    }
+
+    const data = await response.json();
+    const newContactId = data.id;
+    console.log(`   ✅ HubSpot contact created with ID: ${newContactId}`);
+
+    // If we have a company ID, associate the contact with the company
+    if (hsCompanyId && newContactId) {
+      await associateContactWithCompany(newContactId, hsCompanyId, hubspotToken);
+    }
+
+    return newContactId;
+  } catch (error) {
+    console.error(`   ❌ HubSpot create error:`, error);
+    return null;
+  }
+}
+
+/**
+ * Associate a HubSpot contact with a company
+ */
+async function associateContactWithCompany(
+  contactId: string,
+  companyId: string,
+  hubspotToken: string
+): Promise<boolean> {
+  console.log(`   🔗 Associating contact ${contactId} with company ${companyId}...`);
+
+  try {
+    const response = await fetch(
+      `https://api.hubapi.com/crm/v3/objects/contacts/${contactId}/associations/companies/${companyId}/contact_to_company`,
+      {
+        method: 'PUT',
+        headers: {
+          'Authorization': `Bearer ${hubspotToken}`,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`   ⚠️  Association failed: ${response.status} - ${errorText}`);
+      return false;
+    }
+
+    console.log(`   ✅ Contact associated with company`);
+    return true;
+  } catch (error) {
+    console.error(`   ⚠️  Association error:`, error);
     return false;
   }
 }
@@ -604,17 +716,45 @@ export async function enrichContactByZoomInfoId(
 
   console.log(`   ✅ Contact saved to database`);
 
-  // Update HubSpot contact if requested
+  // Create or update HubSpot contact if requested
   let hubspotUpdated = false;
-  if (update_hubspot && hs_contact_id && hubspotToken) {
-    hubspotUpdated = await updateHubSpotContact(
-      hs_contact_id,
-      contactRecord,
-      zoominfo_person_id,
-      hubspotToken
-    );
-  } else if (update_hubspot && !hs_contact_id) {
-    console.log(`   ⚠️  update_hubspot=true but no hs_contact_id provided`);
+  let hubspotCreated = false;
+  let newHubspotContactId: string | null = null;
+
+  if (update_hubspot && hubspotToken) {
+    if (hs_contact_id) {
+      // Update existing HubSpot contact
+      hubspotUpdated = await updateHubSpotContact(
+        hs_contact_id,
+        contactRecord,
+        zoominfo_person_id,
+        hubspotToken
+      );
+    } else {
+      // Create new HubSpot contact
+      newHubspotContactId = await createHubSpotContact(
+        contactRecord,
+        zoominfo_person_id,
+        hubspotToken,
+        hs_company_id
+      );
+      hubspotCreated = newHubspotContactId !== null;
+
+      // Update our database record with the new HubSpot contact ID
+      if (newHubspotContactId && savedContact) {
+        const { data: updatedWithHsId, error: updateHsIdError } = await supabase
+          .from('contacts')
+          .update({ hubspot_contact_id: newHubspotContactId })
+          .eq('id', savedContact.id)
+          .select()
+          .single();
+
+        if (!updateHsIdError && updatedWithHsId) {
+          savedContact = updatedWithHsId;
+          console.log(`   🔄 Updated database with new HubSpot contact ID`);
+        }
+      }
+    }
   } else if (update_hubspot && !hubspotToken) {
     console.log(`   ⚠️  update_hubspot=true but no HubSpot token configured`);
   }
@@ -629,5 +769,7 @@ export async function enrichContactByZoomInfoId(
     },
     rawResponse: zoomInfoResponse,
     hubspot_updated: hubspotUpdated,
+    hubspot_created: hubspotCreated,
+    hubspot_contact_id: newHubspotContactId || hs_contact_id || undefined,
   };
 }
