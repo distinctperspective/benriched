@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js';
-import { getZoomInfoToken } from './zoominfo-auth.js';
+import { getZoomInfoToken, clearTokenCache } from './zoominfo-auth.js';
 
 export interface ContactEnrichRequest {
   email: string;
@@ -89,7 +89,7 @@ export async function enrichContactWithZoomInfo(
   }
 
   // Get JWT token from ZoomInfo
-  const jwtToken = await getZoomInfoToken(ziUsername, ziPassword, ziAuthUrl);
+  let jwtToken = await getZoomInfoToken(ziUsername, ziPassword, ziAuthUrl);
 
   // Build ZoomInfo API request
   const zoomInfoRequest: any = {
@@ -122,10 +122,10 @@ export async function enrichContactWithZoomInfo(
   if (last_name) zoomInfoRequest.matchPersonInput[0].lastName = last_name;
   if (company_name) zoomInfoRequest.matchPersonInput[0].companyName = company_name;
 
-  console.log(`   🔍 Calling ZoomInfo Enrich API...`);
+  console.log(`   Calling ZoomInfo Enrich API...`);
 
-  // Call ZoomInfo Enrich API
-  const response = await fetch(ziEnrichUrl, {
+  // Call ZoomInfo Enrich API with 401 retry
+  let response = await fetch(ziEnrichUrl, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${jwtToken}`,
@@ -134,9 +134,24 @@ export async function enrichContactWithZoomInfo(
     body: JSON.stringify(zoomInfoRequest)
   });
 
+  // If 401, clear cache, get new token, and retry once
+  if (response.status === 401) {
+    console.log(`   Got 401, refreshing JWT token...`);
+    clearTokenCache();
+    jwtToken = await getZoomInfoToken(ziUsername, ziPassword, ziAuthUrl);
+    response = await fetch(ziEnrichUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${jwtToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(zoomInfoRequest)
+    });
+  }
+
   if (!response.ok) {
     const errorText = await response.text();
-    console.error(`   ❌ ZoomInfo API error: ${response.status} - ${errorText}`);
+    console.error(`   ZoomInfo API error: ${response.status} - ${errorText}`);
     throw new Error(`ZoomInfo API error: ${response.status} - ${errorText}`);
   }
 

@@ -1,5 +1,5 @@
 import { supabase } from './supabase.js';
-import { getZoomInfoToken } from './zoominfo-auth.js';
+import { getZoomInfoToken, clearTokenCache } from './zoominfo-auth.js';
 import { enrichContactWithZoomInfo, ContactRecord } from './contact-enrich.js';
 import { classifyTier } from './tier.js';
 import { loadExclusionKeywords, checkExclusion } from './icp-exclusions.js';
@@ -445,8 +445,37 @@ export async function searchAndEnrichContacts(
   console.log("   Filters: " + (managementLevels.join(', ')));
   console.log("   Max results per page: " + (maxResults) + (autoPaginate ? ' (auto-paginating all pages)' : ", Page: " + startPage));
 
-  // Get JWT token
-  const jwtToken = await getZoomInfoToken(ziUsername, ziPassword, ziAuthUrl);
+  // Get JWT token (mutable to allow refresh on 401)
+  let jwtToken = await getZoomInfoToken(ziUsername, ziPassword, ziAuthUrl);
+
+  // Helper to make ZoomInfo API calls with automatic 401 retry
+  const zoomInfoFetch = async (url: string, payload: any): Promise<Response> => {
+    let response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + jwtToken,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    // If 401, clear cache, get new token, and retry once
+    if (response.status === 401) {
+      console.log("    Got 401, refreshing JWT token...");
+      clearTokenCache();
+      jwtToken = await getZoomInfoToken(ziUsername, ziPassword, ziAuthUrl);
+      response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + jwtToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+    }
+
+    return response;
+  };
 
   // Build ZoomInfo search request template
   const buildSearchPayload = (pageNum: number) => {
@@ -486,14 +515,7 @@ export async function searchAndEnrichContacts(
 
     while (hasMore) {
       const payload = buildSearchPayload(currentPage);
-      const searchResponse = await fetch(ziSearchUrl, {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + jwtToken,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(payload),
-      });
+      const searchResponse = await zoomInfoFetch(ziSearchUrl, payload);
 
       if (!searchResponse.ok) {
         const errorText = await searchResponse.text();
@@ -523,14 +545,7 @@ export async function searchAndEnrichContacts(
     const payload = buildSearchPayload(startPage);
     console.log("    Calling ZoomInfo Contact Search API...");
 
-    const searchResponse = await fetch(ziSearchUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + jwtToken,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-    });
+    const searchResponse = await zoomInfoFetch(ziSearchUrl, payload);
 
     if (!searchResponse.ok) {
       const errorText = await searchResponse.text();
@@ -633,14 +648,7 @@ export async function searchAndEnrichContacts(
     }
     console.log("    Enriching " + contactsToEnrich.length + " contacts by person ID...");
 
-    const enrichResponse = await fetch(ziEnrichUrl, {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + jwtToken,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(enrichPayload),
-    });
+    const enrichResponse = await zoomInfoFetch(ziEnrichUrl, enrichPayload);
 
     if (!enrichResponse.ok) {
       const errorText = await enrichResponse.text();
