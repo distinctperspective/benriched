@@ -382,6 +382,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         response_time_ms: responseTimeMs,
         ...(result.error && { error: result.error }),
         ...(result.hubspot_updated !== undefined && { hubspot_updated: result.hubspot_updated }),
+        ...(result.hubspot_created !== undefined && { hubspot_created: result.hubspot_created }),
+        ...(result.hubspot_contact_id && { hubspot_contact_id: result.hubspot_contact_id }),
       });
     } catch (error) {
       console.error('Contact enrich by ID error:', error);
