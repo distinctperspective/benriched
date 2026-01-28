@@ -677,6 +677,8 @@ export async function enrichContactByZoomInfoId(
   const creditsUsed = zoomInfoResponse.creditsUsed || 1;
 
   console.log(`   ✅ Match found: ${enrichedData.firstName} ${enrichedData.lastName}`);
+  console.log(`   🏢 ZoomInfo company: id=${enrichedData.companyId}, name=${enrichedData.companyName}`);
+  console.log(`   🔑 ZoomInfo fields: ${Object.keys(enrichedData).join(', ')}`);
   console.log(`   💰 Credits used: ${creditsUsed}`);
 
   // Extract LinkedIn URL from externalUrls array
@@ -693,11 +695,14 @@ export async function enrichContactByZoomInfoId(
 
   // If no hs_company_id provided but we have a ZoomInfo company ID, look it up in HubSpot
   let resolvedHsCompanyId = hs_company_id;
+  console.log(`   🔍 HubSpot company lookup check: hs_company_id=${hs_company_id}, companyId=${enrichedData.companyId}, update_hubspot=${update_hubspot}, hasToken=${!!hubspotToken}`);
   if (!resolvedHsCompanyId && enrichedData.companyId && update_hubspot && hubspotToken) {
+    console.log(`   🔍 Looking up HubSpot company by ZoomInfo company ID: ${enrichedData.companyId}`);
     resolvedHsCompanyId = await lookupHubSpotCompanyByZoomInfoId(
       String(enrichedData.companyId),
       hubspotToken
     ) || undefined;
+    console.log(`   🔍 HubSpot company lookup result: ${resolvedHsCompanyId}`);
   }
 
   // Map ZoomInfo data to our contact record format
