@@ -23,8 +23,9 @@ export interface ZoomInfoContactData {
   jobTitle?: string;
   managementLevel?: string;
   companyName?: string;
-  companyId?: string;
+  companyId?: string | number;
   companyWebsite?: string;
+  company?: { id?: number; name?: string; website?: string };
   city?: string;
   state?: string;
   country?: string;
@@ -677,8 +678,12 @@ export async function enrichContactByZoomInfoId(
   const creditsUsed = zoomInfoResponse.creditsUsed || 1;
 
   console.log(`   ✅ Match found: ${enrichedData.firstName} ${enrichedData.lastName}`);
-  console.log(`   🏢 ZoomInfo company: id=${enrichedData.companyId}, name=${enrichedData.companyName}`);
-  console.log(`   🔑 ZoomInfo fields: ${Object.keys(enrichedData).join(', ')}`);
+  // ZoomInfo may return company data as flat fields OR nested company object
+  const ziCompanyId = enrichedData.companyId || enrichedData.company?.id;
+  const ziCompanyName = enrichedData.companyName || enrichedData.company?.name;
+  if (ziCompanyId) {
+    console.log(`   🏢 ZoomInfo company: ${ziCompanyName} (ID: ${ziCompanyId})`);
+  }
   console.log(`   💰 Credits used: ${creditsUsed}`);
 
   // Extract LinkedIn URL from externalUrls array
@@ -695,14 +700,11 @@ export async function enrichContactByZoomInfoId(
 
   // If no hs_company_id provided but we have a ZoomInfo company ID, look it up in HubSpot
   let resolvedHsCompanyId = hs_company_id;
-  console.log(`   🔍 HubSpot company lookup check: hs_company_id=${hs_company_id}, companyId=${enrichedData.companyId}, update_hubspot=${update_hubspot}, hasToken=${!!hubspotToken}`);
-  if (!resolvedHsCompanyId && enrichedData.companyId && update_hubspot && hubspotToken) {
-    console.log(`   🔍 Looking up HubSpot company by ZoomInfo company ID: ${enrichedData.companyId}`);
+  if (!resolvedHsCompanyId && ziCompanyId && update_hubspot && hubspotToken) {
     resolvedHsCompanyId = await lookupHubSpotCompanyByZoomInfoId(
-      String(enrichedData.companyId),
+      String(ziCompanyId),
       hubspotToken
     ) || undefined;
-    console.log(`   🔍 HubSpot company lookup result: ${resolvedHsCompanyId}`);
   }
 
   // Map ZoomInfo data to our contact record format
