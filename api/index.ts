@@ -6,6 +6,7 @@ import { enrichDomainWithCost } from '../src/enrichment/enrich.js';
 import { randomUUID } from 'crypto';
 import { matchPersona } from '../src/lib/persona.js';
 import { researchContact } from '../src/lib/research.js';
+import { searchAndEnrichContacts, ContactSearchRequest } from '../src/lib/contact-search.js';
 
 const SEARCH_MODEL_ID = 'perplexity/sonar-pro';
 const ANALYSIS_MODEL_ID = 'openai/gpt-4o-mini';
@@ -202,6 +203,96 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error occurred'
+      });
+    }
+  }
+
+  // Contact search endpoint (v1 and legacy)
+  if (req.url?.includes('/search/contacts') || req.url?.includes('/v1/search/contacts')) {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method not allowed. Use POST.' });
+    }
+
+    // Auth check
+    const authHeader = req.headers.authorization;
+    const xApiKey = req.headers['x-api-key'] as string;
+    const queryApiKey = req.query?.api_key as string;
+    const bodyApiKey = req.body?.api_key as string;
+    const apiKey = process.env.API_KEY || 'amlink21';
+
+    const isAuthorized =
+      authHeader === `Bearer ${apiKey}` ||
+      xApiKey === apiKey ||
+      queryApiKey === apiKey ||
+      bodyApiKey === apiKey;
+
+    if (!isAuthorized) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        hint: 'Include api_key in body, query, X-API-Key header, or Authorization: Bearer <key>',
+      });
+    }
+
+    const body = req.body as ContactSearchRequest;
+
+    if (!body.company_domain && !body.company_name) {
+      return res.status(400).json({ error: 'Missing required field: company_domain or company_name' });
+    }
+
+    const requestStartTime = Date.now();
+
+    try {
+      const ziUsername = process.env.ZI_USERNAME;
+      const ziPassword = process.env.ZI_PASSWORD;
+      const ziAuthUrl = process.env.ZI_AUTH_URL;
+      const ziSearchUrl = process.env.ZI_SEARCH_URL;
+      const ziEnrichUrl = process.env.ZI_ENRICH_URL;
+      const hubspotToken = process.env.HUBSPOT_ACCESS_TOKEN;
+
+      if (!ziUsername || !ziPassword || !ziAuthUrl || !ziSearchUrl || !ziEnrichUrl) {
+        return res.status(500).json({ error: 'ZoomInfo credentials not configured' });
+      }
+
+      const result = await searchAndEnrichContacts(
+        body,
+        ziUsername,
+        ziPassword,
+        ziAuthUrl,
+        ziSearchUrl,
+        ziEnrichUrl,
+        hubspotToken
+      );
+
+      const responseTimeMs = Date.now() - requestStartTime;
+
+      // Log the request
+      await supabase.from('enrichment_requests').insert({
+        hs_company_id: body.hs_company_id || `search_${body.company_domain || body.company_name}`,
+        domain: body.company_domain || body.company_name || 'unknown',
+        company_id: result.data.company.id || undefined,
+        request_source: 'api',
+        request_type: 'contact-search',
+        was_cached: false,
+        cost_usd: result.cost.total_credits,
+        response_time_ms: responseTimeMs,
+        raw_api_responses: {
+          zoominfo: result.raw_search_response,
+        },
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+        metadata: result.metadata,
+        cost: result.cost,
+        response_time_ms: responseTimeMs,
+        errors: result.errors.length > 0 ? result.errors : undefined,
+      });
+    } catch (error) {
+      console.error('Contact search error:', error);
+      return res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
       });
     }
   }
