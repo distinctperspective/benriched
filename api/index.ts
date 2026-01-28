@@ -7,6 +7,7 @@ import { randomUUID } from 'crypto';
 import { matchPersona } from '../src/lib/persona.js';
 import { researchContact } from '../src/lib/research.js';
 import { searchAndEnrichContacts, ContactSearchRequest } from '../src/lib/contact-search.js';
+import { enrichContactByZoomInfoId, ContactEnrichByIdRequest } from '../src/lib/contact-enrich.js';
 import {
   addExclusionKeyword,
   addExclusionKeywords,
@@ -296,6 +297,91 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     } catch (error) {
       console.error('Contact search error:', error);
+      return res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  }
+
+  // Contact enrich by ZoomInfo ID endpoint
+  if (req.url?.includes('/enrich/contact-by-id') || req.url?.includes('/v1/enrich/contact-by-id')) {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method not allowed. Use POST.' });
+    }
+
+    // Auth check
+    const authHeader = req.headers.authorization;
+    const xApiKey = req.headers['x-api-key'] as string;
+    const queryApiKey = req.query?.api_key as string;
+    const bodyApiKey = req.body?.api_key as string;
+    const apiKey = process.env.API_KEY || 'amlink21';
+
+    const isAuthorized =
+      authHeader === `Bearer ${apiKey}` ||
+      xApiKey === apiKey ||
+      queryApiKey === apiKey ||
+      bodyApiKey === apiKey;
+
+    if (!isAuthorized) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        hint: 'Include api_key in body, query, X-API-Key header, or Authorization: Bearer <key>',
+      });
+    }
+
+    const body = req.body as ContactEnrichByIdRequest;
+
+    if (!body.zoominfo_person_id) {
+      return res.status(400).json({ error: 'Missing required field: zoominfo_person_id' });
+    }
+
+    const requestStartTime = Date.now();
+
+    try {
+      const ziUsername = process.env.ZI_USERNAME;
+      const ziPassword = process.env.ZI_PASSWORD;
+      const ziAuthUrl = process.env.ZI_AUTH_URL;
+      const ziEnrichUrl = process.env.ZI_ENRICH_URL;
+
+      if (!ziUsername || !ziPassword || !ziAuthUrl || !ziEnrichUrl) {
+        return res.status(500).json({ error: 'ZoomInfo credentials not configured' });
+      }
+
+      const result = await enrichContactByZoomInfoId(
+        body,
+        ziUsername,
+        ziPassword,
+        ziAuthUrl,
+        ziEnrichUrl
+      );
+
+      const responseTimeMs = Date.now() - requestStartTime;
+
+      // Log the request
+      await supabase.from('enrichment_requests').insert({
+        hs_company_id: body.hs_contact_id || `zi_person_${body.zoominfo_person_id}`,
+        domain: result.data?.email_address || body.zoominfo_person_id,
+        request_source: 'api',
+        request_type: result.was_cached ? 'contact-cached' : 'contact-enrich-by-id',
+        was_cached: result.was_cached || false,
+        cost_usd: result.credits_used || 0,
+        response_time_ms: responseTimeMs,
+        raw_api_responses: result.rawResponse ? {
+          zoominfo: result.rawResponse
+        } : undefined,
+      });
+
+      return res.status(200).json({
+        success: result.success,
+        data: result.data,
+        was_cached: result.was_cached,
+        credits_used: result.credits_used,
+        response_time_ms: responseTimeMs,
+        ...(result.error && { error: result.error }),
+      });
+    } catch (error) {
+      console.error('Contact enrich by ID error:', error);
       return res.status(500).json({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error occurred',

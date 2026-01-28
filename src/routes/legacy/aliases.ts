@@ -1,6 +1,7 @@
 import { Hono } from 'hono';
 import { handleCompanyEnrichment } from '../v1/enrich/company.js';
 import { handleContactEnrichment } from '../v1/enrich/contact.js';
+import { handleContactEnrichmentById } from '../v1/enrich/contact-by-id.js';
 import { handlePersonaMatch } from '../v1/match/persona.js';
 import { handleContactResearch } from '../v1/research/contact.js';
 import { handleEmailSequenceGeneration } from '../v1/generate/email-sequence.js';
@@ -16,6 +17,11 @@ legacy.post('/enrich', async (c) => {
 // POST /enrich/contact → POST /v1/enrich/contact
 legacy.post('/enrich/contact', async (c) => {
   return handleContactEnrichment(c);
+});
+
+// POST /enrich/contact-by-id → POST /v1/enrich/contact-by-id
+legacy.post('/enrich/contact-by-id', async (c) => {
+  return handleContactEnrichmentById(c);
 });
 
 // POST /persona → POST /v1/match/persona
