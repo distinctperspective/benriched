@@ -8,7 +8,7 @@ export async function handleContactEnrichmentById(c: Context) {
 
   try {
     const body = await c.req.json<ContactEnrichByIdRequest>();
-    const { zoominfo_person_id, hs_contact_id, hs_company_id, force_refresh } = body;
+    const { zoominfo_person_id, hs_contact_id, hs_company_id, force_refresh, update_hubspot } = body;
 
     if (!zoominfo_person_id) {
       return c.json({ error: 'Missing required field: zoominfo_person_id' }, 400);
@@ -18,6 +18,7 @@ export async function handleContactEnrichmentById(c: Context) {
     const ziPassword = c.env?.ZI_PASSWORD || process.env.ZI_PASSWORD;
     const ziAuthUrl = c.env?.ZI_AUTH_URL || process.env.ZI_AUTH_URL;
     const ziEnrichUrl = c.env?.ZI_ENRICH_URL || process.env.ZI_ENRICH_URL;
+    const hubspotToken = c.env?.HUBSPOT_ACCESS_TOKEN || process.env.HUBSPOT_ACCESS_TOKEN;
 
     if (!ziUsername || !ziPassword || !ziAuthUrl || !ziEnrichUrl) {
       return c.json({ error: 'ZoomInfo credentials not configured' }, 500);
@@ -29,7 +30,8 @@ export async function handleContactEnrichmentById(c: Context) {
       hs_contact_id,
       hs_company_id,
       force_refresh,
-    }, ziUsername, ziPassword, ziAuthUrl, ziEnrichUrl);
+      update_hubspot,
+    }, ziUsername, ziPassword, ziAuthUrl, ziEnrichUrl, hubspotToken);
 
     const responseTimeMs = Date.now() - requestStartTime;
 
@@ -56,6 +58,7 @@ export async function handleContactEnrichmentById(c: Context) {
       credits_used: result.credits_used,
       response_time_ms: responseTimeMs,
       ...(result.error && { error: result.error }),
+      ...(result.hubspot_updated !== undefined && { hubspot_updated: result.hubspot_updated }),
     });
 
   } catch (error) {

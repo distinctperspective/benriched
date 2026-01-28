@@ -343,6 +343,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const ziPassword = process.env.ZI_PASSWORD;
       const ziAuthUrl = process.env.ZI_AUTH_URL;
       const ziEnrichUrl = process.env.ZI_ENRICH_URL;
+      const hubspotToken = process.env.HUBSPOT_ACCESS_TOKEN;
 
       if (!ziUsername || !ziPassword || !ziAuthUrl || !ziEnrichUrl) {
         return res.status(500).json({ error: 'ZoomInfo credentials not configured' });
@@ -353,7 +354,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         ziUsername,
         ziPassword,
         ziAuthUrl,
-        ziEnrichUrl
+        ziEnrichUrl,
+        hubspotToken
       );
 
       const responseTimeMs = Date.now() - requestStartTime;
@@ -379,6 +381,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         credits_used: result.credits_used,
         response_time_ms: responseTimeMs,
         ...(result.error && { error: result.error }),
+        ...(result.hubspot_updated !== undefined && { hubspot_updated: result.hubspot_updated }),
       });
     } catch (error) {
       console.error('Contact enrich by ID error:', error);

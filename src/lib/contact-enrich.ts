@@ -55,6 +55,7 @@ export interface ContactEnrichByIdRequest {
   hs_contact_id?: string;
   hs_company_id?: string;
   force_refresh?: boolean;
+  update_hubspot?: boolean;  // If true and hs_contact_id provided, update HubSpot contact
 }
 
 export interface ContactEnrichResponse {
@@ -67,6 +68,7 @@ export interface ContactEnrichResponse {
     credits: number;
   };
   rawResponse?: any;
+  hubspot_updated?: boolean;
 }
 
 export async function enrichContactWithZoomInfo(
@@ -296,17 +298,70 @@ export async function enrichContactWithZoomInfo(
 }
 
 /**
+ * Update a HubSpot contact with enriched data
+ */
+async function updateHubSpotContact(
+  contactId: string,
+  contactData: Partial<ContactRecord>,
+  zoomInfoPersonId: string,
+  hubspotToken: string
+): Promise<boolean> {
+  console.log(`   📤 Updating HubSpot contact ${contactId}...`);
+
+  // Map our fields to HubSpot properties
+  const hubspotProperties: Record<string, string> = {};
+
+  if (contactData.first_name) hubspotProperties.firstname = contactData.first_name;
+  if (contactData.last_name) hubspotProperties.lastname = contactData.last_name;
+  if (contactData.full_name) hubspotProperties.full_name = contactData.full_name;
+  if (contactData.email_address) hubspotProperties.email = contactData.email_address;
+  if (contactData.job_title) hubspotProperties.jobtitle = contactData.job_title;
+  if (contactData.direct_phone) hubspotProperties.phone_direct__c = contactData.direct_phone;
+  if (contactData.cell_phone) hubspotProperties.mobilephone = contactData.cell_phone;
+  if (contactData.linked_profile_url) hubspotProperties.boomerang_linkedin_url = contactData.linked_profile_url;
+  hubspotProperties.zoom_individual_id = zoomInfoPersonId;
+
+  try {
+    const response = await fetch(
+      `https://api.hubapi.com/crm/v3/objects/contacts/${contactId}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Authorization': `Bearer ${hubspotToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ properties: hubspotProperties }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`   ❌ HubSpot update failed: ${response.status} - ${errorText}`);
+      return false;
+    }
+
+    console.log(`   ✅ HubSpot contact updated`);
+    return true;
+  } catch (error) {
+    console.error(`   ❌ HubSpot update error:`, error);
+    return false;
+  }
+}
+
+/**
  * Enrich a contact using ZoomInfo person ID (from contact search results)
  * Creates or updates the contact in the database
+ * Optionally updates the HubSpot contact if hs_contact_id and update_hubspot are provided
  */
 export async function enrichContactByZoomInfoId(
   request: ContactEnrichByIdRequest,
   ziUsername: string,
   ziPassword: string,
   ziAuthUrl: string,
-  ziEnrichUrl: string
+  ziEnrichUrl: string,
+  hubspotToken?: string
 ): Promise<ContactEnrichResponse> {
-  const { zoominfo_person_id, hs_contact_id, hs_company_id, force_refresh } = request;
+  const { zoominfo_person_id, hs_contact_id, hs_company_id, force_refresh, update_hubspot } = request;
 
   console.log(`\n🔍 Enriching contact by ZoomInfo ID: ${zoominfo_person_id}`);
 
@@ -549,6 +604,21 @@ export async function enrichContactByZoomInfoId(
 
   console.log(`   ✅ Contact saved to database`);
 
+  // Update HubSpot contact if requested
+  let hubspotUpdated = false;
+  if (update_hubspot && hs_contact_id && hubspotToken) {
+    hubspotUpdated = await updateHubSpotContact(
+      hs_contact_id,
+      contactRecord,
+      zoominfo_person_id,
+      hubspotToken
+    );
+  } else if (update_hubspot && !hs_contact_id) {
+    console.log(`   ⚠️  update_hubspot=true but no hs_contact_id provided`);
+  } else if (update_hubspot && !hubspotToken) {
+    console.log(`   ⚠️  update_hubspot=true but no HubSpot token configured`);
+  }
+
   return {
     success: true,
     data: savedContact,
@@ -558,5 +628,6 @@ export async function enrichContactByZoomInfoId(
       credits: creditsUsed,
     },
     rawResponse: zoomInfoResponse,
+    hubspot_updated: hubspotUpdated,
   };
 }
