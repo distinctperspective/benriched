@@ -24,6 +24,7 @@ The Contact Search endpoint searches ZoomInfo for contacts at a company, filters
   "require_contact_data": true,           // Optional, default true - filter out unreachable contacts
   "use_icp_filter": true,                 // Optional, default true - filter by ICP keywords
   "check_hubspot": true,                  // Optional, default true - check HubSpot for existing contacts
+  "filter_non_icp": false,                // Optional, default false - if true, remove non-ICP contacts from results
   "hs_company_id": "12345"                // Optional - HubSpot company ID for tracking
 }
 ```
@@ -54,6 +55,8 @@ The Contact Search endpoint searches ZoomInfo for contacts at a company, filters
         "icp_tier": "Tier 3 (Strong Owner)",
         "icp_tier_rank": 3,
         "icp_matched_title": "Director of Operations",
+        "is_icp": true,                    // ICP relevance (false if excluded by keyword)
+        "icp_exclusion_reason": null,      // Matched exclusion keyword (if is_icp=false)
         "in_hubspot": false,
         "hs_contact_id": null
       }
@@ -78,6 +81,7 @@ The Contact Search endpoint searches ZoomInfo for contacts at a company, filters
     "ai_classified_count": 5,
     "hubspot_checked_count": 35,
     "hubspot_matched_count": 10,
+    "non_icp_count": 3,                    // Contacts tagged is_icp: false
     "failed_count": 0
   },
   "cost": {
@@ -200,6 +204,36 @@ If still Tier 0, call GPT-4o-mini for classification:
 ### Stage 6: Sorting
 
 Contacts are sorted by `icp_tier_rank` descending (highest tier first).
+
+---
+
+### Stage 6.5: ICP Exclusion Tagging
+
+**Purpose:** Tag contacts whose titles contain non-ICP keywords (e.g., retail, HR, marketing roles).
+
+**How it works:**
+1. Load exclusion keywords from `icp_exclusion_keywords` table (cached 5 minutes)
+2. Check each contact's job title against exclusion keywords (case-insensitive contains)
+3. If match found: `is_icp: false`, `icp_exclusion_reason: "matched keyword"`
+4. If no match: `is_icp: true`, `icp_exclusion_reason: null`
+
+**Example:** "VP, Field Operations" contains "field operations" → tagged `is_icp: false`
+
+**Default exclusion keywords:**
+| Keyword | Reason |
+|---------|--------|
+| field operations | Retail store operations |
+| retail operations | Retail store operations |
+| people operations | HR function |
+| marketing operations | Marketing function |
+| loss prevention | Retail security |
+| franchise | Franchise management |
+| real estate | Property management |
+| store operations | Retail store ops |
+
+**Filter vs Tag:**
+- Default (`filter_non_icp: false`): Non-ICP contacts remain in results, just tagged
+- With `filter_non_icp: true`: Non-ICP contacts removed from results entirely
 
 ---
 
@@ -355,5 +389,408 @@ ORDER BY created_at DESC;
 | `src/lib/contact-search.ts` | Core logic: search, filter, tier, enrich |
 | `src/lib/zoominfo-auth.ts` | JWT token caching for ZoomInfo |
 | `src/lib/tier.ts` | AI tier classification |
+| `src/lib/icp-exclusions.ts` | ICP exclusion keyword management |
 | `src/routes/v1/search/contacts.ts` | Route handler |
+| `src/routes/v1/icp/exclusions.ts` | ICP exclusion CRUD endpoints |
 | `src/routes/legacy/aliases.ts` | Legacy `/search/contacts` route |
+
+---
+
+## ICP Exclusions API
+
+Manage keywords that mark contacts as non-ICP (e.g., retail, HR, marketing roles).
+
+### GET /v1/icp/exclusions
+
+List all exclusion keywords.
+
+```bash
+curl "https://benriched.vercel.app/v1/icp/exclusions?api_key=amlink21"
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": [
+    { "id": "uuid", "keyword": "field operations", "reason": "Retail store operations", "created_at": "..." },
+    { "id": "uuid", "keyword": "people operations", "reason": "HR function", "created_at": "..." }
+  ],
+  "count": 8
+}
+```
+
+### POST /v1/icp/exclusions
+
+Add one or more exclusion keywords.
+
+**Single keyword:**
+```bash
+curl -X POST "https://benriched.vercel.app/v1/icp/exclusions?api_key=amlink21" \
+  -H "Content-Type: application/json" \
+  -d '{"keyword": "restaurant operations", "reason": "Restaurant ops, not food manufacturing"}'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "uuid",
+    "keyword": "restaurant operations",
+    "reason": "Restaurant ops, not food manufacturing",
+    "created_at": "..."
+  }
+}
+```
+
+**Batch (multiple keywords):**
+```bash
+curl -X POST "https://benriched.vercel.app/v1/icp/exclusions?api_key=amlink21" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "keywords": ["restaurant operations", "hotel operations", "hospitality"],
+    "reason": "Hospitality roles - not food manufacturing ICP"
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "added": ["restaurant operations", "hotel operations"],
+    "already_exists": ["hospitality"],
+    "count": 2
+  }
+}
+```
+
+### DELETE /v1/icp/exclusions/:keyword
+
+Remove an exclusion keyword.
+
+```bash
+curl -X DELETE "https://benriched.vercel.app/v1/icp/exclusions/franchise?api_key=amlink21"
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "deleted": "franchise"
+}
+```
+
+---
+
+## Frontend Integration Examples
+
+### TypeScript Interfaces
+
+```typescript
+interface Contact {
+  first_name: string;
+  last_name: string;
+  full_name: string;
+  job_title: string;
+  zoominfo_person_id: string;
+  contact_accuracy_score: number;
+  has_email: boolean;
+  has_supplemental_email: boolean;
+  has_direct_phone: boolean;
+  has_mobile_phone: boolean;
+  icp_tier: string;
+  icp_tier_rank: number;
+  icp_matched_title: string | null;
+  is_icp: boolean;                    // NEW: ICP relevance
+  icp_exclusion_reason: string | null; // NEW: Why excluded (if is_icp=false)
+  in_hubspot: boolean;
+  hs_contact_id: string | null;
+}
+
+interface ContactSearchResponse {
+  success: boolean;
+  data: {
+    company: { id?: string; domain?: string; company_name?: string };
+    contacts: Contact[];
+    pagination: {
+      page: number;
+      page_size: number;
+      total_results: number;
+      total_pages: number;
+      has_more: boolean;
+    };
+  };
+  metadata: {
+    search_filters: {
+      management_levels: string[];
+      job_titles?: string[];
+      icp_keyword_filter: boolean;
+    };
+    found_count: number;
+    no_contact_data_filtered_count?: number;
+    tier_tagged_count: number;
+    ai_classified_count: number;
+    hubspot_checked_count?: number;
+    hubspot_matched_count?: number;
+    non_icp_count?: number;           // NEW: Count of is_icp=false contacts
+    failed_count: number;
+  };
+  cost: { search_credits: number; enrich_credits: number; total_credits: number };
+  response_time_ms: number;
+}
+```
+
+### React Component Example
+
+```tsx
+function ContactList({ contacts }: { contacts: Contact[] }) {
+  // Separate ICP and non-ICP contacts
+  const icpContacts = contacts.filter(c => c.is_icp);
+  const nonIcpContacts = contacts.filter(c => !c.is_icp);
+
+  return (
+    <div>
+      {/* ICP Contacts - Primary list */}
+      <h2>ICP Contacts ({icpContacts.length})</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Title</th>
+            <th>Tier</th>
+            <th>In HubSpot</th>
+            <th>Contact Data</th>
+          </tr>
+        </thead>
+        <tbody>
+          {icpContacts.map(contact => (
+            <tr key={contact.zoominfo_person_id}>
+              <td>{contact.full_name}</td>
+              <td>{contact.job_title}</td>
+              <td>
+                <TierBadge tier={contact.icp_tier_rank} />
+              </td>
+              <td>{contact.in_hubspot ? '✓' : '—'}</td>
+              <td>
+                {contact.has_email && '📧'}
+                {contact.has_direct_phone && '📞'}
+                {contact.has_mobile_phone && '📱'}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      {/* Non-ICP Contacts - Collapsible section */}
+      {nonIcpContacts.length > 0 && (
+        <details>
+          <summary>
+            Non-ICP Contacts ({nonIcpContacts.length}) - Not relevant to food manufacturing
+          </summary>
+          <table className="non-icp-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Title</th>
+                <th>Exclusion Reason</th>
+              </tr>
+            </thead>
+            <tbody>
+              {nonIcpContacts.map(contact => (
+                <tr key={contact.zoominfo_person_id} className="non-icp-row">
+                  <td>{contact.full_name}</td>
+                  <td>{contact.job_title}</td>
+                  <td>
+                    <span className="exclusion-badge">
+                      {contact.icp_exclusion_reason}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
+    </div>
+  );
+}
+
+function TierBadge({ tier }: { tier: number }) {
+  const colors = {
+    4: 'bg-purple-500',  // Ultimate
+    3: 'bg-blue-500',    // Strong Owner
+    2: 'bg-green-500',   // Manager
+    1: 'bg-gray-400',    // IC
+    0: 'bg-gray-200',    // Unknown
+  };
+  const labels = {
+    4: 'Ultimate',
+    3: 'Strong Owner',
+    2: 'Manager',
+    1: 'IC',
+    0: 'Unknown',
+  };
+  return (
+    <span className={`badge ${colors[tier]}`}>
+      Tier {tier} ({labels[tier]})
+    </span>
+  );
+}
+```
+
+### Filtering Non-ICP Contacts (Server-side)
+
+If you don't want non-ICP contacts at all, request with `filter_non_icp: true`:
+
+```typescript
+const response = await fetch('/v1/search/contacts?api_key=amlink21', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    company_domain: 'dutchbros.com',
+    filter_non_icp: true,  // Remove non-ICP contacts from response
+  }),
+});
+```
+
+### Managing Exclusion Keywords (Admin UI)
+
+```tsx
+function ExclusionKeywordsManager() {
+  const [keywords, setKeywords] = useState<ExclusionKeyword[]>([]);
+  const [newKeyword, setNewKeyword] = useState('');
+  const [reason, setReason] = useState('');
+
+  // Load keywords on mount
+  useEffect(() => {
+    fetch('/v1/icp/exclusions?api_key=amlink21')
+      .then(res => res.json())
+      .then(data => setKeywords(data.data));
+  }, []);
+
+  // Add a new keyword
+  const addKeyword = async () => {
+    const res = await fetch('/v1/icp/exclusions?api_key=amlink21', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keyword: newKeyword, reason }),
+    });
+    const data = await res.json();
+    if (data.success) {
+      setKeywords([...keywords, data.data]);
+      setNewKeyword('');
+      setReason('');
+    }
+  };
+
+  // Delete a keyword
+  const deleteKeyword = async (keyword: string) => {
+    await fetch(`/v1/icp/exclusions/${encodeURIComponent(keyword)}?api_key=amlink21`, {
+      method: 'DELETE',
+    });
+    setKeywords(keywords.filter(k => k.keyword !== keyword));
+  };
+
+  return (
+    <div>
+      <h2>ICP Exclusion Keywords</h2>
+      <p>Contacts with titles containing these keywords are marked as non-ICP.</p>
+
+      {/* Add new keyword */}
+      <div className="add-form">
+        <input
+          value={newKeyword}
+          onChange={e => setNewKeyword(e.target.value)}
+          placeholder="e.g., restaurant operations"
+        />
+        <input
+          value={reason}
+          onChange={e => setReason(e.target.value)}
+          placeholder="Reason (optional)"
+        />
+        <button onClick={addKeyword}>Add Keyword</button>
+      </div>
+
+      {/* List existing keywords */}
+      <table>
+        <thead>
+          <tr>
+            <th>Keyword</th>
+            <th>Reason</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {keywords.map(k => (
+            <tr key={k.id}>
+              <td><code>{k.keyword}</code></td>
+              <td>{k.reason}</td>
+              <td>
+                <button onClick={() => deleteKeyword(k.keyword)}>Delete</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+```
+
+### Real-World Example: Dutch Bros Coffee
+
+**Request:**
+```bash
+curl -X POST "https://benriched.vercel.app/v1/search/contacts?api_key=amlink21" \
+  -H "Content-Type: application/json" \
+  -d '{"company_domain": "dutchbros.com", "max_results": 25}'
+```
+
+**Response highlights:**
+```json
+{
+  "metadata": {
+    "found_count": 25,
+    "tier_tagged_count": 25,
+    "non_icp_count": 7
+  },
+  "data": {
+    "contacts": [
+      {
+        "full_name": "Rachel LaHorgue",
+        "job_title": "Vice President, Supply Chain",
+        "icp_tier": "Tier 4 (Ultimate)",
+        "is_icp": true,
+        "icp_exclusion_reason": null
+      },
+      {
+        "full_name": "Alena Slaughter",
+        "job_title": "Director, Research Development & Food Safety",
+        "icp_tier": "Tier 3 (Strong Owner)",
+        "is_icp": true,
+        "icp_exclusion_reason": null
+      },
+      {
+        "full_name": "Lance Risser",
+        "job_title": "Vice President, Field Operations",
+        "icp_tier": "Tier 4 (Ultimate)",
+        "is_icp": false,
+        "icp_exclusion_reason": "field operations"
+      },
+      {
+        "full_name": "Michael Buzan",
+        "job_title": "Strategy Vice President, People Operations",
+        "icp_tier": "Tier 4 (Ultimate)",
+        "is_icp": false,
+        "icp_exclusion_reason": "people operations"
+      }
+    ]
+  }
+}
+```
+
+**Key insight:** Both Lance Risser and Rachel LaHorgue are Tier 4 (VP-level), but:
+- Rachel (Supply Chain) → `is_icp: true` (food manufacturing relevant)
+- Lance (Field Operations) → `is_icp: false` (retail store ops, not manufacturing)
