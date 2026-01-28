@@ -4,6 +4,7 @@ import { handleContactEnrichment } from '../v1/enrich/contact.js';
 import { handlePersonaMatch } from '../v1/match/persona.js';
 import { handleContactResearch } from '../v1/research/contact.js';
 import { handleEmailSequenceGeneration } from '../v1/generate/email-sequence.js';
+import { handleContactSearch } from '../v1/search/contacts.js';
 
 const legacy = new Hono();
 
@@ -30,6 +31,11 @@ legacy.post('/research/contact', async (c) => {
 // POST /outreach/email-sequence → POST /v1/generate/email-sequence
 legacy.post('/outreach/email-sequence', async (c) => {
   return handleEmailSequenceGeneration(c);
+});
+
+// POST /search/contacts → POST /v1/search/contacts
+legacy.post('/search/contacts', async (c) => {
+  return handleContactSearch(c);
 });
 
 // GET /health → GET /v1/health

@@ -29,14 +29,16 @@ app.get('/', (c) => {
         enrich_contact: 'POST /v1/enrich/contact',
         match_persona: 'POST /v1/match/persona',
         research_contact: 'POST /v1/research/contact',
-        generate_email_sequence: 'POST /v1/generate/email-sequence'
+        generate_email_sequence: 'POST /v1/generate/email-sequence',
+        search_contacts: 'POST /v1/search/contacts'
       },
       legacy: {
         health: 'GET /health (use /v1/health)',
         enrich: 'POST /enrich (use /v1/enrich/company)',
         persona: 'POST /persona (use /v1/match/persona)',
         research_contact: 'POST /research/contact (use /v1/research/contact)',
-        outreach_email_sequence: 'POST /outreach/email-sequence (use /v1/generate/email-sequence)'
+        outreach_email_sequence: 'POST /outreach/email-sequence (use /v1/generate/email-sequence)',
+        search_contacts: 'POST /search/contacts (use /v1/search/contacts)'
       }
     },
     migration: 'Legacy endpoints are supported indefinitely. Consider migrating to v1 endpoints.'
@@ -52,6 +54,8 @@ app.use('/v1/match/*', rateLimitMiddleware);
 app.use('/v1/match/*', authMiddleware);
 app.use('/v1/generate/*', rateLimitMiddleware);
 app.use('/v1/generate/*', authMiddleware);
+app.use('/v1/search/*', rateLimitMiddleware);
+app.use('/v1/search/*', authMiddleware);
 
 // Mount legacy routes with auth middleware (except health)
 app.use('/enrich*', rateLimitMiddleware);
@@ -62,6 +66,8 @@ app.use('/research*', rateLimitMiddleware);
 app.use('/research*', authMiddleware);
 app.use('/outreach*', rateLimitMiddleware);
 app.use('/outreach*', authMiddleware);
+app.use('/search*', rateLimitMiddleware);
+app.use('/search*', authMiddleware);
 
 app.route('/v1', v1Routes);
 app.route('/', legacyRoutes);
