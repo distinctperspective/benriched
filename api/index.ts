@@ -7,6 +7,12 @@ import { randomUUID } from 'crypto';
 import { matchPersona } from '../src/lib/persona.js';
 import { researchContact } from '../src/lib/research.js';
 import { searchAndEnrichContacts, ContactSearchRequest } from '../src/lib/contact-search.js';
+import {
+  addExclusionKeyword,
+  addExclusionKeywords,
+  removeExclusionKeyword,
+  listExclusionKeywords,
+} from '../src/lib/icp-exclusions.js';
 
 const SEARCH_MODEL_ID = 'perplexity/sonar-pro';
 const ANALYSIS_MODEL_ID = 'openai/gpt-4o-mini';
@@ -295,6 +301,142 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         error: error instanceof Error ? error.message : 'Unknown error occurred',
       });
     }
+  }
+
+  // ICP Exclusions endpoints
+  if (req.url?.includes('/icp/exclusions')) {
+    // Auth check
+    const authHeader = req.headers.authorization;
+    const xApiKey = req.headers['x-api-key'] as string;
+    const queryApiKey = req.query?.api_key as string;
+    const bodyApiKey = req.body?.api_key as string;
+    const apiKey = process.env.API_KEY || 'amlink21';
+
+    const isAuthorized =
+      authHeader === `Bearer ${apiKey}` ||
+      xApiKey === apiKey ||
+      queryApiKey === apiKey ||
+      bodyApiKey === apiKey;
+
+    if (!isAuthorized) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        hint: 'Include api_key in body, query, X-API-Key header, or Authorization: Bearer <key>',
+      });
+    }
+
+    // POST - Add exclusion keyword(s)
+    if (req.method === 'POST') {
+      try {
+        const body = req.body;
+
+        // Handle batch (keywords array) or single (keyword string)
+        if (body.keywords && Array.isArray(body.keywords)) {
+          const result = await addExclusionKeywords(body.keywords, body.reason);
+
+          return res.status(200).json({
+            success: true,
+            data: {
+              added: result.added,
+              already_exists: result.alreadyExists,
+              errors: result.errors.length > 0 ? result.errors : undefined,
+              count: result.added.length,
+            },
+          });
+        } else if (body.keyword) {
+          const result = await addExclusionKeyword(body.keyword, body.reason);
+
+          if (result.alreadyExists) {
+            return res.status(409).json({
+              success: false,
+              error: 'Keyword already exists',
+              keyword: body.keyword,
+            });
+          }
+
+          if (!result.success) {
+            return res.status(400).json({
+              success: false,
+              error: result.error,
+            });
+          }
+
+          return res.status(201).json({
+            success: true,
+            data: result.data,
+          });
+        } else {
+          return res.status(400).json({
+            success: false,
+            error: 'Missing required field: keyword or keywords',
+          });
+        }
+      } catch (error) {
+        console.error('Add exclusion error:', error);
+        return res.status(500).json({
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error occurred',
+        });
+      }
+    }
+
+    // GET - List all exclusion keywords
+    if (req.method === 'GET') {
+      try {
+        const keywords = await listExclusionKeywords();
+
+        return res.status(200).json({
+          success: true,
+          data: keywords,
+          count: keywords.length,
+        });
+      } catch (error) {
+        console.error('List exclusions error:', error);
+        return res.status(500).json({
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error occurred',
+        });
+      }
+    }
+
+    // DELETE - Remove an exclusion keyword
+    if (req.method === 'DELETE') {
+      try {
+        // Extract keyword from URL path: /v1/icp/exclusions/:keyword
+        const urlParts = req.url?.split('/') || [];
+        const keywordIndex = urlParts.findIndex(p => p === 'exclusions') + 1;
+        const keyword = keywordIndex > 0 ? decodeURIComponent(urlParts[keywordIndex]?.split('?')[0] || '') : '';
+
+        if (!keyword) {
+          return res.status(400).json({
+            success: false,
+            error: 'Missing keyword parameter',
+          });
+        }
+
+        const result = await removeExclusionKeyword(keyword);
+
+        if (!result.success) {
+          return res.status(400).json({
+            success: false,
+            error: result.error,
+          });
+        }
+
+        return res.status(200).json({
+          success: true,
+          deleted: keyword,
+        });
+      } catch (error) {
+        console.error('Delete exclusion error:', error);
+        return res.status(500).json({
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error occurred',
+        });
+      }
+    }
+
+    return res.status(405).json({ error: 'Method not allowed. Use GET, POST, or DELETE.' });
   }
 
   // Persona matching endpoint

@@ -2,6 +2,7 @@ import { supabase } from './supabase.js';
 import { getZoomInfoToken } from './zoominfo-auth.js';
 import { enrichContactWithZoomInfo, ContactRecord } from './contact-enrich.js';
 import { classifyTier } from './tier.js';
+import { loadExclusionKeywords, checkExclusion } from './icp-exclusions.js';
 
 const DEFAULT_MANAGEMENT_LEVELS = ['C Level Exec', 'VP Level Exec', 'Director', 'Manager'];
 const DEFAULT_MAX_RESULTS = 25;
@@ -64,6 +65,7 @@ export interface ContactSearchRequest {
   check_hubspot?: boolean; // default true - check HubSpot before enriching
   auto_paginate?: boolean; // default false - fetch all pages automatically
   require_contact_data?: boolean; // default true - filter out contacts with no email/phone
+  filter_non_icp?: boolean; // default false - if true, remove non-ICP contacts from results
 }
 
 export interface ContactSearchResult {
@@ -96,6 +98,7 @@ export interface ContactSearchResult {
     hubspot_checked_count?: number;
     hubspot_matched_count?: number;
     enrichment_skipped_count?: number;
+    non_icp_count?: number;
     failed_count: number;
   };
   cost: {
@@ -828,10 +831,52 @@ export async function searchAndEnrichContacts(
     enrichedContacts.sort((a: any, b: any) => (b.icp_tier_rank || 0) - (a.icp_tier_rank || 0));
   }
 
+  // ICP exclusion tagging: check each contact's title against exclusion keywords
+  const exclusionKeywords = await loadExclusionKeywords();
+  let nonIcpCount = 0;
+
+  if (exclusionKeywords.length > 0) {
+    console.log("    Checking " + enrichedContacts.length + " contacts against " + exclusionKeywords.length + " ICP exclusion keywords...");
+
+    for (const contact of enrichedContacts as any[]) {
+      const exclusionMatch = contact.job_title
+        ? checkExclusion(contact.job_title, exclusionKeywords)
+        : null;
+
+      if (exclusionMatch) {
+        contact.is_icp = false;
+        contact.icp_exclusion_reason = exclusionMatch.keyword;
+        nonIcpCount++;
+      } else {
+        contact.is_icp = true;
+        contact.icp_exclusion_reason = null;
+      }
+    }
+
+    if (nonIcpCount > 0) {
+      console.log("    Tagged " + nonIcpCount + " contacts as non-ICP");
+    }
+  } else {
+    // No exclusion keywords - all contacts are ICP by default
+    for (const contact of enrichedContacts as any[]) {
+      contact.is_icp = true;
+      contact.icp_exclusion_reason = null;
+    }
+  }
+
+  // Optionally filter out non-ICP contacts
+  const filterNonIcp = request.filter_non_icp === true;
+  let filteredContacts = enrichedContacts;
+
+  if (filterNonIcp && nonIcpCount > 0) {
+    filteredContacts = enrichedContacts.filter((c: any) => c.is_icp === true);
+    console.log("    Filtered out " + nonIcpCount + " non-ICP contacts (filter_non_icp=true)");
+  }
+
   return {
     data: {
       company,
-      contacts: enrichedContacts,
+      contacts: filteredContacts,
       pagination: {
         page: startPage,
         page_size: maxResults,
@@ -861,6 +906,9 @@ export async function searchAndEnrichContacts(
       }),
       ...(noContactDataFilteredCount > 0 && {
         no_contact_data_filtered_count: noContactDataFilteredCount,
+      }),
+      ...(nonIcpCount > 0 && {
+        non_icp_count: nonIcpCount,
       }),
       failed_count: errors.length,
     },
