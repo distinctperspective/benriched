@@ -425,6 +425,61 @@ async function createHubSpotContact(
 }
 
 /**
+ * Look up a HubSpot company ID by ZoomInfo company ID
+ * Searches HubSpot companies where zoominfo_company_id matches
+ */
+async function lookupHubSpotCompanyByZoomInfoId(
+  zoomInfoCompanyId: string,
+  hubspotToken: string
+): Promise<string | null> {
+  console.log(`   🔍 Looking up HubSpot company for ZoomInfo company ID: ${zoomInfoCompanyId}`);
+
+  try {
+    const response = await fetch(
+      'https://api.hubapi.com/crm/v3/objects/companies/search',
+      {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${hubspotToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          filterGroups: [{
+            filters: [{
+              propertyName: 'zoominfo_company_id',
+              operator: 'EQ',
+              value: zoomInfoCompanyId,
+            }]
+          }],
+          properties: ['name', 'domain', 'zoominfo_company_id'],
+          limit: 1,
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`   ⚠️  HubSpot company search failed: ${response.status} - ${errorText}`);
+      return null;
+    }
+
+    const data = await response.json();
+    if (data.results && data.results.length > 0) {
+      const hsCompanyId = data.results[0].id;
+      const companyName = data.results[0].properties?.name || 'Unknown';
+      console.log(`   ✅ Found HubSpot company: ${companyName} (ID: ${hsCompanyId})`);
+      return hsCompanyId;
+    }
+
+    console.log(`   ⚠️  No HubSpot company found for ZoomInfo company ID: ${zoomInfoCompanyId}`);
+    return null;
+  } catch (error) {
+    console.error(`   ⚠️  HubSpot company lookup error:`, error);
+    return null;
+  }
+}
+
+/**
  * Associate a HubSpot contact with a company
  */
 async function associateContactWithCompany(
@@ -636,11 +691,20 @@ export async function enrichContactByZoomInfoId(
     }
   }
 
+  // If no hs_company_id provided but we have a ZoomInfo company ID, look it up in HubSpot
+  let resolvedHsCompanyId = hs_company_id;
+  if (!resolvedHsCompanyId && enrichedData.companyId && update_hubspot && hubspotToken) {
+    resolvedHsCompanyId = await lookupHubSpotCompanyByZoomInfoId(
+      String(enrichedData.companyId),
+      hubspotToken
+    ) || undefined;
+  }
+
   // Map ZoomInfo data to our contact record format
   const contactRecord: Partial<ContactRecord> = {
     zoominfo_person_id: zoominfo_person_id,
     hubspot_contact_id: hs_contact_id || undefined,
-    hubspot_company_id: hs_company_id || undefined,
+    hubspot_company_id: resolvedHsCompanyId || undefined,
     email_address: enrichedData.email || '',
     first_name: enrichedData.firstName || undefined,
     last_name: enrichedData.lastName || undefined,
@@ -720,7 +784,7 @@ export async function enrichContactByZoomInfoId(
         contactRecord,
         zoominfo_person_id,
         hubspotToken,
-        hs_company_id
+        resolvedHsCompanyId
       );
       hubspotCreated = newHubspotContactId !== null;
 
