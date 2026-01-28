@@ -337,6 +337,7 @@ curl https://benriched.vercel.app/
       "health": "GET /v1/health",
       "enrich_company": "POST /v1/enrich/company",
       "enrich_contact": "POST /v1/enrich/contact",
+      "enrich_contact_by_id": "POST /v1/enrich/contact-by-id",
       "match_persona": "POST /v1/match/persona",
       "research_contact": "POST /v1/research/contact",
       "generate_email_sequence": "POST /v1/generate/email-sequence"
@@ -631,7 +632,113 @@ curl -X POST https://benriched.vercel.app/v1/enrich/contact \
 
 ---
 
-### 5. POST /v1/match/persona
+### 5. POST /v1/enrich/contact-by-id
+Enrich a contact using their ZoomInfo person ID. Useful for enriching contacts discovered via contact search where you have the ZoomInfo ID but not the email address.
+
+**Request:**
+```bash
+curl -X POST https://benriched.vercel.app/v1/enrich/contact-by-id \
+  -H "Authorization: Bearer amlink21" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "zoominfo_person_id": "123456789",
+    "hs_contact_id": "789012",
+    "hs_company_id": "456789",
+    "force_refresh": false,
+    "update_hubspot": true
+  }'
+```
+
+**Request Body Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `zoominfo_person_id` | string | Yes | ZoomInfo person ID to enrich |
+| `hs_contact_id` | string | No | HubSpot contact ID for tracking and updating |
+| `hs_company_id` | string | No | HubSpot company ID for tracking |
+| `force_refresh` | boolean | No | Force re-enrichment, bypass cache (default: false) |
+| `update_hubspot` | boolean | No | If true and hs_contact_id provided, update HubSpot contact with enriched data (default: false) |
+
+**Response:** `200 OK`
+```json
+{
+  "success": true,
+  "data": {
+    "id": "fadf8db2-ebcc-4d6a-84b4-4fe40e5fba4d",
+    "email_address": "nellie@oishii.com",
+    "first_name": "Nellie",
+    "last_name": "Arroyo",
+    "full_name": "Nellie Arroyo",
+    "job_title": "General Manager, Production Operations",
+    "direct_phone": "(555) 123-4567",
+    "cell_phone": "(248) 835-7718",
+    "linked_profile_url": "https://www.linkedin.com/in/nellie-arroyo-664877105",
+    "zoominfo_person_id": "123456789",
+    "hubspot_contact_id": "789012",
+    "hubspot_company_id": "456789",
+    "created_at": "2026-01-21T08:58:17.490467+00:00",
+    "updated_at": "2026-01-21T08:58:17.490467+00:00"
+  },
+  "was_cached": false,
+  "credits_used": 1,
+  "response_time_ms": 1315,
+  "hubspot_updated": true
+}
+```
+
+**Response Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `success` | boolean | Whether enrichment succeeded |
+| `data` | object | Enriched contact data |
+| `was_cached` | boolean | Whether data came from database cache |
+| `credits_used` | number | ZoomInfo credits used (0 if cached) |
+| `response_time_ms` | number | Response time in milliseconds |
+| `hubspot_updated` | boolean | Whether HubSpot contact was updated (only present if `update_hubspot: true`) |
+| `error` | string | Error message if enrichment partially failed |
+
+**HubSpot Field Mappings:**
+
+When `update_hubspot: true` is set and `hs_contact_id` is provided, the following fields are pushed to HubSpot:
+
+| Our Field | HubSpot Property |
+|-----------|------------------|
+| `first_name` | `firstname` |
+| `last_name` | `lastname` |
+| `full_name` | `full_name` |
+| `email_address` | `email` |
+| `job_title` | `jobtitle` |
+| `direct_phone` | `phone_direct__c` |
+| `cell_phone` | `mobilephone` |
+| `linked_profile_url` | `boomerang_linkedin_url` |
+| `zoominfo_person_id` | `zoom_individual_id` |
+
+**Source Attribution (always set):**
+
+| HubSpot Property | Value | Description |
+|------------------|-------|-------------|
+| `hs_analytics_source` | `OFFLINE` | Original source (ZoomInfo = offline) |
+| `hs_lead_status` | `NEW` | Lead status for new contacts |
+| `lifecyclestage` | `lead` | Lifecycle stage |
+
+**Status Codes:**
+- `200 OK` - Contact enrichment successful
+- `400 Bad Request` - Missing required field (zoominfo_person_id)
+- `401 Unauthorized` - Missing or invalid API key
+- `500 Internal Server Error` - ZoomInfo credentials not configured or API error
+
+**Error Response:**
+```json
+{
+  "success": false,
+  "error": "Error message describing what went wrong"
+}
+```
+
+---
+
+### 6. POST /v1/match/persona
 Match a job title to a sales persona for targeting and personalization.
 
 **Request:**
@@ -701,7 +808,7 @@ curl -X POST https://benriched.vercel.app/v1/match/persona \
 
 ---
 
-### 6. POST /v1/research/contact
+### 7. POST /v1/research/contact
 Research a prospect for outbound sales personalization using Perplexity web search.
 
 **Request:**
@@ -789,7 +896,7 @@ curl -X POST https://benriched.vercel.app/v1/research/contact \
 
 ---
 
-### 7. POST /v1/generate/email-sequence
+### 8. POST /v1/generate/email-sequence
 Generate personalized email sequences for outbound sales campaigns.
 
 **Request:**
@@ -898,6 +1005,7 @@ All legacy endpoints are supported indefinitely and respond identically to their
 |----------------|----------------------|
 | `POST /enrich` | `POST /v1/enrich/company` |
 | `POST /enrich/contact` | `POST /v1/enrich/contact` |
+| `POST /enrich/contact-by-id` | `POST /v1/enrich/contact-by-id` |
 | `POST /persona` | `POST /v1/match/persona` |
 | `POST /research/contact` | `POST /v1/research/contact` |
 | `POST /outreach/email-sequence` | `POST /v1/generate/email-sequence` |
@@ -1016,6 +1124,18 @@ curl -X POST https://benriched.vercel.app/v1/enrich/contact \
   }' | jq .
 ```
 
+**Enrich a contact by ZoomInfo ID (with HubSpot update):**
+```bash
+curl -X POST https://benriched.vercel.app/v1/enrich/contact-by-id \
+  -H "Authorization: Bearer amlink21" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "zoominfo_person_id": "123456789",
+    "hs_contact_id": "789012",
+    "update_hubspot": true
+  }' | jq .
+```
+
 **Match a persona:**
 ```bash
 curl -X POST https://benriched.vercel.app/v1/match/persona?api_key=amlink21 \
@@ -1082,9 +1202,12 @@ curl https://benriched.vercel.app/v1/health | jq .
 - `last_name`: String - Last name
 - `full_name`: String - Full name
 - `job_title`: String - Job title
+- `direct_phone`: String - Direct phone number
 - `cell_phone`: String - Mobile phone number
 - `linked_profile_url`: String - LinkedIn profile URL
+- `zoominfo_person_id`: String - ZoomInfo person ID
 - `hubspot_contact_id`: String - HubSpot contact ID if provided
+- `hubspot_company_id`: String - HubSpot company ID if provided
 
 ### Persona Response Fields
 

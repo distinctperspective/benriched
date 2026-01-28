@@ -33,6 +33,7 @@ benriched/
 │       │   ├── enrich/
 │       │   │   ├── company.ts   # POST /v1/enrich/company
 │       │   │   ├── contact.ts   # POST /v1/enrich/contact
+│       │   │   ├── contact-by-id.ts  # POST /v1/enrich/contact-by-id
 │       │   │   └── index.ts
 │       │   ├── research/
 │       │   │   ├── contact.ts   # POST /v1/research/contact
@@ -448,6 +449,89 @@ curl -X POST "https://benriched.vercel.app/enrich/contact?api_key=amlink21" \
 - ✅ Phone number retrieval (mobile and direct)
 - ✅ Job title normalization
 - ✅ Database storage in contacts table
+- ✅ Request logging with raw API responses
+
+### POST /enrich/contact-by-id
+
+Enrich a contact using their ZoomInfo person ID. Useful for enriching contacts discovered via contact search.
+
+**Request:**
+```bash
+curl -X POST "https://benriched.vercel.app/enrich/contact-by-id?api_key=amlink21" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "zoominfo_person_id": "123456789",
+    "hs_contact_id": "789012",
+    "hs_company_id": "456789",
+    "update_hubspot": true
+  }'
+```
+
+**Parameters:**
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `zoominfo_person_id` | string | Yes | ZoomInfo person ID to enrich |
+| `hs_contact_id` | string | No | HubSpot contact ID for tracking/updating |
+| `hs_company_id` | string | No | HubSpot company ID |
+| `force_refresh` | boolean | No | Force re-enrichment, bypass cache (default: false) |
+| `update_hubspot` | boolean | No | If true and hs_contact_id provided, update HubSpot contact (default: false) |
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "id": "fadf8db2-ebcc-4d6a-84b4-4fe40e5fba4d",
+    "email_address": "nellie@oishii.com",
+    "first_name": "Nellie",
+    "last_name": "Arroyo",
+    "full_name": "Nellie Arroyo",
+    "job_title": "General Manager, Production Operations",
+    "direct_phone": "(555) 123-4567",
+    "cell_phone": "(248) 835-7718",
+    "linked_profile_url": "https://www.linkedin.com/in/nellie-arroyo-664877105",
+    "zoominfo_person_id": "123456789",
+    "hubspot_contact_id": "789012",
+    "hubspot_company_id": "456789",
+    "created_at": "2026-01-21T08:58:17.490467+00:00",
+    "updated_at": "2026-01-21T08:58:17.490467+00:00"
+  },
+  "was_cached": false,
+  "credits_used": 1,
+  "response_time_ms": 1315,
+  "hubspot_updated": true
+}
+```
+
+**HubSpot Field Mappings (when `update_hubspot: true`):**
+
+| Our Field | HubSpot Property |
+|-----------|------------------|
+| `first_name` | `firstname` |
+| `last_name` | `lastname` |
+| `full_name` | `full_name` |
+| `email_address` | `email` |
+| `job_title` | `jobtitle` |
+| `direct_phone` | `phone_direct__c` |
+| `cell_phone` | `mobilephone` |
+| `linked_profile_url` | `boomerang_linkedin_url` |
+| `zoominfo_person_id` | `zoom_individual_id` |
+
+**Source Attribution (always set):**
+
+| HubSpot Property | Value | Description |
+|------------------|-------|-------------|
+| `hs_analytics_source` | `OFFLINE` | Original source (ZoomInfo = offline) |
+| `hs_lead_status` | `NEW` | Lead status for new contacts |
+| `lifecyclestage` | `lead` | Lifecycle stage |
+
+**Features:**
+
+- ✅ Enrich by ZoomInfo person ID (no email required)
+- ✅ Optional HubSpot contact update with field mapping
+- ✅ Database storage with zoominfo_person_id indexed
+- ✅ JWT token caching (23.5-hour expiration)
 - ✅ Request logging with raw API responses
 
 ### POST /research/contact
@@ -995,6 +1079,7 @@ The API has been reorganized to add versioning and improve naming consistency wh
 |-------------|------------|---------|
 | `POST /v1/enrich/company` | `POST /enrich` | Company enrichment by domain |
 | `POST /v1/enrich/contact` | `POST /enrich/contact` | Contact enrichment by email |
+| `POST /v1/enrich/contact-by-id` | `POST /enrich/contact-by-id` | Contact enrichment by ZoomInfo ID |
 | `POST /v1/match/persona` | `POST /persona` | Job title to persona matching |
 | `POST /v1/research/contact` | `POST /research/contact` | Prospect research for outbound |
 | `POST /v1/generate/email-sequence` | `POST /outreach/email-sequence` | Email sequence generation |

@@ -89,8 +89,8 @@ app.post('/', async (c) => {
           });
         }
 
-        const aiGatewayKey = c.env?.AI_GATEWAY_API_KEY || process.env.AI_GATEWAY_API_KEY;
-        const firecrawlApiKey = c.env?.FIRECRAWL_API_KEY || process.env.FIRECRAWL_API_KEY;
+        const aiGatewayKey = (c.env as any)?.AI_GATEWAY_API_KEY || process.env.AI_GATEWAY_API_KEY;
+        const firecrawlApiKey = (c.env as any)?.FIRECRAWL_API_KEY || process.env.FIRECRAWL_API_KEY;
 
         if (!aiGatewayKey) {
           await emitter.error(new Error('AI Gateway API key not configured'));
@@ -236,8 +236,8 @@ app.post('/', async (c) => {
       }
     }
 
-    const aiGatewayKey = c.env?.AI_GATEWAY_API_KEY || process.env.AI_GATEWAY_API_KEY;
-    const firecrawlApiKey = c.env?.FIRECRAWL_API_KEY || process.env.FIRECRAWL_API_KEY;
+    const aiGatewayKey = (c.env as any)?.AI_GATEWAY_API_KEY || process.env.AI_GATEWAY_API_KEY;
+    const firecrawlApiKey = (c.env as any)?.FIRECRAWL_API_KEY || process.env.FIRECRAWL_API_KEY;
 
     if (!aiGatewayKey) {
       return c.json({ error: 'AI Gateway API key not configured' }, 500);
@@ -355,10 +355,10 @@ app.post('/contact', async (c) => {
       return c.json({ error: 'Missing required field: email' }, 400);
     }
 
-    const ziUsername = c.env?.ZI_USERNAME || process.env.ZI_USERNAME;
-    const ziPassword = c.env?.ZI_PASSWORD || process.env.ZI_PASSWORD;
-    const ziAuthUrl = c.env?.ZI_AUTH_URL || process.env.ZI_AUTH_URL;
-    const ziEnrichUrl = c.env?.ZI_ENRICH_URL || process.env.ZI_ENRICH_URL;
+    const ziUsername = (c.env as any)?.ZI_USERNAME || process.env.ZI_USERNAME;
+    const ziPassword = (c.env as any)?.ZI_PASSWORD || process.env.ZI_PASSWORD;
+    const ziAuthUrl = (c.env as any)?.ZI_AUTH_URL || process.env.ZI_AUTH_URL;
+    const ziEnrichUrl = (c.env as any)?.ZI_ENRICH_URL || process.env.ZI_ENRICH_URL;
 
     if (!ziUsername || !ziPassword || !ziAuthUrl || !ziEnrichUrl) {
       return c.json({ error: 'ZoomInfo credentials not configured' }, 500);

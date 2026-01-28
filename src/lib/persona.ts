@@ -74,7 +74,7 @@ export interface PersonaMatchResult {
 
 export async function matchPersona(
   title: string,
-  supabase: ReturnType<typeof createClient>,
+  supabase: any,
   save_mapping: boolean = false
 ): Promise<PersonaMatchResult> {
   console.log(`\n🎭 Matching persona for title: ${title}`);

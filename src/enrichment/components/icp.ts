@@ -2,7 +2,7 @@
 import { createClient } from '@supabase/supabase-js';
 
 // Target NAICS codes for ICP matching - loaded from database
-let TARGET_ICP_NAICS = new Set<string>();
+export let TARGET_ICP_NAICS = new Set<string>();
 let isNaicsLoaded = false;
 
 // Load target ICP NAICS codes from database

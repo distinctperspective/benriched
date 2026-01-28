@@ -22,8 +22,8 @@ app.post('/contact', async (c) => {
       return c.json({ error: 'Missing required fields: prospect_name and company_name' }, 400);
     }
 
-    const perplexityApiKey = c.env?.PERPLEXITY_API_KEY || process.env.PERPLEXITY_API_KEY;
-    const apiKey = api_key || c.env?.API_KEY || process.env.API_KEY;
+    const perplexityApiKey = (c.env as any)?.PERPLEXITY_API_KEY || process.env.PERPLEXITY_API_KEY;
+    const apiKey = api_key || (c.env as any)?.API_KEY || process.env.API_KEY;
 
     if (!perplexityApiKey) {
       return c.json({ error: 'Perplexity API key not configured' }, 500);
