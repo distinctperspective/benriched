@@ -381,9 +381,9 @@ async function createHubSpotContact(
 ): Promise<string | null> {
   console.log(`   📤 Creating new HubSpot contact...`);
 
-  // Email is required for HubSpot contacts
-  if (!contactData.email_address) {
-    console.error(`   ❌ Cannot create HubSpot contact without email`);
+  // Need at least a name or email to create a HubSpot contact
+  if (!contactData.email_address && !contactData.first_name && !contactData.last_name) {
+    console.error(`   ❌ Cannot create HubSpot contact without email or name`);
     return null;
   }
 
@@ -653,21 +653,7 @@ export async function enrichContactByZoomInfoId(
     linked_profile_url: linkedInUrl || undefined,
   };
 
-  // If no email returned, we can't save (email_address is required)
-  if (!contactRecord.email_address) {
-    console.log(`   ⚠️  No email returned from ZoomInfo - contact cannot be saved`);
-    return {
-      success: true,
-      data: contactRecord as ContactRecord,
-      was_cached: false,
-      credits_used: creditsUsed,
-      cost: { credits: creditsUsed },
-      error: 'Contact enriched but no email returned - not saved to database',
-      rawResponse: zoomInfoResponse,
-    };
-  }
-
-  // Save to database - upsert by zoominfo_person_id
+  // Save to database - upsert by zoominfo_person_id or email
   let savedContact;
   let saveError;
 
@@ -678,11 +664,9 @@ export async function enrichContactByZoomInfoId(
     .eq('zoominfo_person_id', zoominfo_person_id)
     .single();
 
-  const { data: existingByEmail } = await supabase
-    .from('contacts')
-    .select('*')
-    .eq('email_address', contactRecord.email_address)
-    .single();
+  const existingByEmail = contactRecord.email_address
+    ? (await supabase.from('contacts').select('*').eq('email_address', contactRecord.email_address).single()).data
+    : null;
 
   const existing = existingByZiId || existingByEmail;
 
