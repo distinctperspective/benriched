@@ -74,6 +74,8 @@ export interface ContactSearchResult {
       id?: string;
       domain?: string;
       company_name?: string;
+      zoominfo_company_id?: string;
+      hs_company_id?: string;
     };
     contacts: ContactRecord[];
     pagination: {
@@ -117,6 +119,7 @@ interface ZoomInfoSearchContact {
   lastName?: string;
   jobTitle?: string;
   companyName?: string;
+  companyId?: number;
   contactAccuracyScore?: number;
   validDate?: string;
   lastUpdatedDate?: string;
@@ -580,10 +583,60 @@ export async function searchAndEnrichContacts(
   }
 
   // Look up company in our DB
-  let company: { id?: string; domain?: string; company_name?: string } = {
+  let company: { id?: string; domain?: string; company_name?: string; zoominfo_company_id?: string; hs_company_id?: string } = {
     domain: request.company_domain,
     company_name: request.company_name,
   };
+
+  // Capture ZoomInfo company ID from raw search response
+  // ZoomInfo search returns company info in various formats depending on API version
+  if (searchData?.data?.[0]) {
+    const rawFirst = searchData.data[0];
+    const ziCompanyId = rawFirst.companyId || rawFirst.company?.id;
+    if (ziCompanyId) {
+      company.zoominfo_company_id = String(ziCompanyId);
+      console.log("    ZoomInfo company ID: " + company.zoominfo_company_id);
+    } else {
+      // Log first result keys to debug what fields are available
+      console.log("    ZoomInfo search result keys: " + Object.keys(rawFirst).join(', '));
+    }
+  }
+
+  // Look up HubSpot company by ZoomInfo company ID
+  if (company.zoominfo_company_id && hubspotToken) {
+    try {
+      const hsResponse = await fetch('https://api.hubapi.com/crm/v3/objects/companies/search', {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + hubspotToken,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          filterGroups: [{
+            filters: [{
+              propertyName: 'zoominfo_company_id',
+              operator: 'EQ',
+              value: company.zoominfo_company_id,
+            }],
+          }],
+          properties: ['name', 'domain', 'zoominfo_company_id'],
+          limit: 1,
+        }),
+      });
+
+      if (hsResponse.ok) {
+        const hsData = await hsResponse.json();
+        if (hsData.results?.length > 0) {
+          company.hs_company_id = hsData.results[0].id;
+          console.log("    HubSpot company match: " + company.hs_company_id + " (" + (hsData.results[0].properties?.name || '') + ")");
+        } else {
+          console.log("    No HubSpot company match for ZoomInfo ID " + company.zoominfo_company_id);
+        }
+      }
+    } catch (err) {
+      console.log("    HubSpot company lookup error: " + (err instanceof Error ? err.message : err));
+    }
+  }
 
   if (request.company_domain) {
     const { data: existingCompany } = await supabase
@@ -593,7 +646,7 @@ export async function searchAndEnrichContacts(
       .single();
 
     if (existingCompany) {
-      company = existingCompany;
+      company = { ...company, ...existingCompany };
     }
   }
 

@@ -7,6 +7,7 @@ import { randomUUID } from 'crypto';
 import { matchPersona } from '../src/lib/persona.js';
 import { researchContact } from '../src/lib/research.js';
 import { searchAndEnrichContacts, ContactSearchRequest } from '../src/lib/contact-search.js';
+import { searchIcpCompanies, CompanySearchRequest } from '../src/lib/company-search.js';
 import { enrichContactByZoomInfoId, ContactEnrichByIdRequest } from '../src/lib/contact-enrich.js';
 import {
   addExclusionKeyword,
@@ -297,6 +298,87 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       });
     } catch (error) {
       console.error('Contact search error:', error);
+      return res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
+      });
+    }
+  }
+
+  // Company search endpoint (v1 and legacy)
+  if (req.url?.includes('/search/companies') || req.url?.includes('/v1/search/companies')) {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method not allowed. Use POST.' });
+    }
+
+    // Auth check
+    const authHeader = req.headers.authorization;
+    const xApiKey = req.headers['x-api-key'] as string;
+    const queryApiKey = req.query?.api_key as string;
+    const bodyApiKey = req.body?.api_key as string;
+    const apiKey = process.env.API_KEY || 'amlink21';
+
+    const isAuthorized =
+      authHeader === `Bearer ${apiKey}` ||
+      xApiKey === apiKey ||
+      queryApiKey === apiKey ||
+      bodyApiKey === apiKey;
+
+    if (!isAuthorized) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        hint: 'Include api_key in body, query, X-API-Key header, or Authorization: Bearer <key>',
+      });
+    }
+
+    const body = req.body as CompanySearchRequest;
+    const requestStartTime = Date.now();
+
+    try {
+      const ziUsername = process.env.ZI_USERNAME;
+      const ziPassword = process.env.ZI_PASSWORD;
+      const ziAuthUrl = process.env.ZI_AUTH_URL;
+      const ziCompanySearchUrl = process.env.ZI_COMPANY_SEARCH_URL;
+      const hubspotToken = process.env.HUBSPOT_ACCESS_TOKEN;
+
+      if (!ziUsername || !ziPassword || !ziAuthUrl || !ziCompanySearchUrl) {
+        return res.status(500).json({ error: 'ZoomInfo credentials not configured (missing ZI_COMPANY_SEARCH_URL)' });
+      }
+
+      const result = await searchIcpCompanies(
+        body,
+        ziUsername,
+        ziPassword,
+        ziAuthUrl,
+        ziCompanySearchUrl,
+        hubspotToken
+      );
+
+      const responseTimeMs = Date.now() - requestStartTime;
+
+      // Log the request
+      await supabase.from('enrichment_requests').insert({
+        hs_company_id: body.hs_company_id || 'company_search',
+        domain: body.company_name || 'icp_search',
+        request_source: 'api',
+        request_type: 'company-search',
+        was_cached: false,
+        cost_usd: result.cost.search_credits,
+        response_time_ms: responseTimeMs,
+        raw_api_responses: {
+          zoominfo: result.raw_search_response,
+        },
+      });
+
+      return res.status(200).json({
+        success: true,
+        data: result.data,
+        metadata: result.metadata,
+        cost: result.cost,
+        response_time_ms: responseTimeMs,
+      });
+    } catch (error) {
+      console.error('Company search error:', error);
       return res.status(500).json({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error occurred',

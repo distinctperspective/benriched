@@ -30,7 +30,8 @@ app.get('/', (c) => {
         match_persona: 'POST /v1/match/persona',
         research_contact: 'POST /v1/research/contact',
         generate_email_sequence: 'POST /v1/generate/email-sequence',
-        search_contacts: 'POST /v1/search/contacts'
+        search_contacts: 'POST /v1/search/contacts',
+        search_companies: 'POST /v1/search/companies'
       },
       legacy: {
         health: 'GET /health (use /v1/health)',
@@ -38,7 +39,8 @@ app.get('/', (c) => {
         persona: 'POST /persona (use /v1/match/persona)',
         research_contact: 'POST /research/contact (use /v1/research/contact)',
         outreach_email_sequence: 'POST /outreach/email-sequence (use /v1/generate/email-sequence)',
-        search_contacts: 'POST /search/contacts (use /v1/search/contacts)'
+        search_contacts: 'POST /search/contacts (use /v1/search/contacts)',
+        search_companies: 'POST /search/companies (use /v1/search/companies)'
       }
     },
     migration: 'Legacy endpoints are supported indefinitely. Consider migrating to v1 endpoints.'
