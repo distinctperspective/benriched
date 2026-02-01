@@ -2,8 +2,9 @@ import { Hono } from 'hono';
 import { gateway } from '@ai-sdk/gateway';
 import { saveEnrichmentRequest, EnrichmentRequestRecord } from '../lib/requests.js';
 import { researchContact, ContactResearchRequest } from '../lib/research.js';
+import { AppEnv } from '../types.js';
 
-const app = new Hono();
+const app = new Hono<AppEnv>();
 
 interface ResearchContactRequestBody extends ContactResearchRequest {
   api_key?: string;
@@ -46,6 +47,7 @@ app.post('/contact', async (c) => {
     const requestRecord: EnrichmentRequestRecord = {
       hs_company_id: `research_${crypto.randomUUID()}`,
       domain: prospect_name,
+      user_id: c.get('userId') || null,
       request_source: 'api',
       request_type: 'contact-research',
       was_cached: false,

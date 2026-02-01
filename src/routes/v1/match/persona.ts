@@ -2,8 +2,9 @@ import { Hono } from 'hono';
 import { Context } from 'hono';
 import { matchPersona } from '../../../lib/persona.js';
 import { supabase } from '../../../lib/supabase.js';
+import { AppEnv } from '../../../types.js';
 
-export async function handlePersonaMatch(c: Context) {
+export async function handlePersonaMatch(c: Context<AppEnv>) {
   try {
     const body = await c.req.json<{ title: string; api_key?: string }>();
     const { title, api_key } = body;

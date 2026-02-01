@@ -2,8 +2,9 @@ import { Hono } from 'hono';
 import { Context } from 'hono';
 import { searchAndEnrichContacts, ContactSearchRequest } from '../../../lib/contact-search.js';
 import { saveEnrichmentRequest, EnrichmentRequestRecord } from '../../../lib/requests.js';
+import { AppEnv } from '../../../types.js';
 
-export async function handleContactSearch(c: Context) {
+export async function handleContactSearch(c: Context<AppEnv>) {
   const requestStartTime = Date.now();
 
   try {
@@ -13,12 +14,12 @@ export async function handleContactSearch(c: Context) {
       return c.json({ error: 'Missing required field: company_domain or company_name' }, 400);
     }
 
-    const ziUsername = c.env?.ZI_USERNAME || process.env.ZI_USERNAME;
-    const ziPassword = c.env?.ZI_PASSWORD || process.env.ZI_PASSWORD;
-    const ziAuthUrl = c.env?.ZI_AUTH_URL || process.env.ZI_AUTH_URL;
-    const ziSearchUrl = c.env?.ZI_SEARCH_URL || process.env.ZI_SEARCH_URL;
-    const ziEnrichUrl = c.env?.ZI_ENRICH_URL || process.env.ZI_ENRICH_URL;
-    const hubspotToken = c.env?.HUBSPOT_ACCESS_TOKEN || process.env.HUBSPOT_ACCESS_TOKEN;
+    const ziUsername = (c.env as any)?.ZI_USERNAME || process.env.ZI_USERNAME;
+    const ziPassword = (c.env as any)?.ZI_PASSWORD || process.env.ZI_PASSWORD;
+    const ziAuthUrl = (c.env as any)?.ZI_AUTH_URL || process.env.ZI_AUTH_URL;
+    const ziSearchUrl = (c.env as any)?.ZI_SEARCH_URL || process.env.ZI_SEARCH_URL;
+    const ziEnrichUrl = (c.env as any)?.ZI_ENRICH_URL || process.env.ZI_ENRICH_URL;
+    const hubspotToken = (c.env as any)?.HUBSPOT_ACCESS_TOKEN || process.env.HUBSPOT_ACCESS_TOKEN;
 
     if (!ziUsername || !ziPassword || !ziAuthUrl || !ziSearchUrl || !ziEnrichUrl) {
       return c.json({ error: 'ZoomInfo credentials not configured' }, 500);
@@ -41,6 +42,7 @@ export async function handleContactSearch(c: Context) {
       hs_company_id: body.hs_company_id || `search_${body.company_domain || body.company_name}`,
       domain: body.company_domain || body.company_name || 'unknown',
       company_id: result.data.company.id || undefined,
+      user_id: c.get('userId') || null,
       request_source: 'api',
       request_type: 'contact-search',
       was_cached: false,

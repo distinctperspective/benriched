@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { Context } from 'hono';
 import { saveEnrichmentRequest, EnrichmentRequestRecord } from '../../../lib/requests.js';
 import { researchContact, ContactResearchRequest } from '../../../lib/research.js';
+import { AppEnv } from '../../../types.js';
 
 interface ResearchContactRequestBody extends ContactResearchRequest {
   api_key?: string;
@@ -9,7 +10,7 @@ interface ResearchContactRequestBody extends ContactResearchRequest {
 
 const RESEARCH_MODEL_ID = 'perplexity/sonar-pro';
 
-export async function handleContactResearch(c: Context) {
+export async function handleContactResearch(c: Context<AppEnv>) {
   const requestStartTime = Date.now();
 
   try {
@@ -20,8 +21,8 @@ export async function handleContactResearch(c: Context) {
       return c.json({ error: 'Missing required fields: prospect_name and company_name' }, 400);
     }
 
-    const perplexityApiKey = c.env?.PERPLEXITY_API_KEY || process.env.PERPLEXITY_API_KEY;
-    const apiKey = api_key || c.env?.API_KEY || process.env.API_KEY;
+    const perplexityApiKey = (c.env as any)?.PERPLEXITY_API_KEY || process.env.PERPLEXITY_API_KEY;
+    const apiKey = api_key || (c.env as any)?.API_KEY || process.env.API_KEY;
 
     if (!perplexityApiKey) {
       return c.json({ error: 'Perplexity API key not configured' }, 500);
@@ -44,6 +45,7 @@ export async function handleContactResearch(c: Context) {
     const requestRecord: EnrichmentRequestRecord = {
       hs_company_id: `research_${crypto.randomUUID()}`,
       domain: prospect_name,
+      user_id: c.get('userId') || null,
       request_source: 'api',
       request_type: 'contact-research',
       was_cached: false,

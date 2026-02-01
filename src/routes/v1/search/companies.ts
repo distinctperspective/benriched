@@ -2,18 +2,19 @@ import { Hono } from 'hono';
 import { Context } from 'hono';
 import { searchIcpCompanies, CompanySearchRequest } from '../../../lib/company-search.js';
 import { saveEnrichmentRequest, EnrichmentRequestRecord } from '../../../lib/requests.js';
+import { AppEnv } from '../../../types.js';
 
-export async function handleCompanySearch(c: Context) {
+export async function handleCompanySearch(c: Context<AppEnv>) {
   const requestStartTime = Date.now();
 
   try {
     const body = await c.req.json<CompanySearchRequest>();
 
-    const ziUsername = c.env?.ZI_USERNAME || process.env.ZI_USERNAME;
-    const ziPassword = c.env?.ZI_PASSWORD || process.env.ZI_PASSWORD;
-    const ziAuthUrl = c.env?.ZI_AUTH_URL || process.env.ZI_AUTH_URL;
-    const ziCompanySearchUrl = c.env?.ZI_COMPANY_SEARCH_URL || process.env.ZI_COMPANY_SEARCH_URL;
-    const hubspotToken = c.env?.HUBSPOT_ACCESS_TOKEN || process.env.HUBSPOT_ACCESS_TOKEN;
+    const ziUsername = (c.env as any)?.ZI_USERNAME || process.env.ZI_USERNAME;
+    const ziPassword = (c.env as any)?.ZI_PASSWORD || process.env.ZI_PASSWORD;
+    const ziAuthUrl = (c.env as any)?.ZI_AUTH_URL || process.env.ZI_AUTH_URL;
+    const ziCompanySearchUrl = (c.env as any)?.ZI_COMPANY_SEARCH_URL || process.env.ZI_COMPANY_SEARCH_URL;
+    const hubspotToken = (c.env as any)?.HUBSPOT_ACCESS_TOKEN || process.env.HUBSPOT_ACCESS_TOKEN;
 
     if (!ziUsername || !ziPassword || !ziAuthUrl || !ziCompanySearchUrl) {
       return c.json({ error: 'ZoomInfo credentials not configured' }, 500);
@@ -34,6 +35,7 @@ export async function handleCompanySearch(c: Context) {
     const requestRecord: EnrichmentRequestRecord = {
       hs_company_id: body.hs_company_id || 'company_search',
       domain: body.company_name || 'icp_search',
+      user_id: c.get('userId') || null,
       request_source: 'api',
       request_type: 'company-search',
       was_cached: false,

@@ -1,3 +1,11 @@
+// Hono app environment type for typed context variables
+export type AppEnv = {
+  Variables: {
+    apiKey: string;
+    userId: string | null;
+  };
+};
+
 export type EntityScope = 'operating_company' | 'ultimate_parent';
 export type RelationshipType = 'standalone' | 'subsidiary' | 'division' | 'brand' | 'unknown';
 export type SourceType = 'filing' | 'company_ir' | 'company_site' | 'reputable_media' | 'estimate_site' | 'directory' | 'unknown';

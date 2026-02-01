@@ -1,8 +1,9 @@
 import { Hono } from 'hono';
 import { Context } from 'hono';
 import { generateEmailSequence, EmailSequenceRequest } from '../../../lib/outreach.js';
+import { AppEnv } from '../../../types.js';
 
-export async function handleEmailSequenceGeneration(c: Context) {
+export async function handleEmailSequenceGeneration(c: Context<AppEnv>) {
   const requestStartTime = Date.now();
 
   try {

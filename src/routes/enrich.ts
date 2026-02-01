@@ -6,8 +6,9 @@ import { saveCompany, getCompanyByDomain, CompanyRecord } from '../lib/supabase.
 import { saveEnrichmentRequest, EnrichmentRequestRecord } from '../lib/requests.js';
 import { enrichContactWithZoomInfo, ContactEnrichRequest } from '../lib/contact-enrich.js';
 import { SSEEmitter, createSSEHeaders } from '../lib/sseEmitter.js';
+import { AppEnv } from '../types.js';
 
-const app = new Hono();
+const app = new Hono<AppEnv>();
 
 interface EnrichRequest {
   domain: string;
@@ -68,6 +69,7 @@ app.post('/', async (c) => {
                 hs_company_id,
                 domain: normalizedDomain,
                 company_id: existingCompany.id,
+                user_id: c.get('userId') || null,
                 request_source: 'hubspot',
                 request_type: 'cached',
                 was_cached: true,
@@ -307,6 +309,7 @@ app.post('/', async (c) => {
         hs_company_id: effectiveHsCompanyId,
         domain: normalizedDomain,
         company_id: savedCompany.id,
+        user_id: c.get('userId') || null,
         request_source: hs_company_id ? 'hubspot' : 'api',
         request_type: 'enrichment',
         was_cached: false,
@@ -382,6 +385,7 @@ app.post('/contact', async (c) => {
     const requestRecord: EnrichmentRequestRecord = {
       hs_company_id: hs_contact_id || `contact_${email}`,
       domain: email,
+      user_id: c.get('userId') || null,
       request_source: 'api',
       request_type: result.was_cached ? 'contact-cached' : 'contact-enrich',
       was_cached: result.was_cached || false,

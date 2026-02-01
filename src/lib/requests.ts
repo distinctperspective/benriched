@@ -23,6 +23,7 @@ export interface EnrichmentRequestRecord {
   hs_company_id: string;
   domain: string;
   company_id?: string | null;
+  user_id?: string | null;
   request_source?: string;
   request_type?: string;
   was_cached: boolean;

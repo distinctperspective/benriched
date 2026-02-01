@@ -4,6 +4,7 @@ import { gateway } from '@ai-sdk/gateway';
 import { enrichDomainWithCost } from '../../../enrichment/enrich.js';
 import { saveCompany, getCompanyByDomain, CompanyRecord } from '../../../lib/supabase.js';
 import { saveEnrichmentRequest, EnrichmentRequestRecord } from '../../../lib/requests.js';
+import { AppEnv } from '../../../types.js';
 
 interface EnrichRequest {
   domain: string;
@@ -17,7 +18,7 @@ interface EnrichRequest {
 const SEARCH_MODEL_ID = 'perplexity/sonar-pro';
 const ANALYSIS_MODEL_ID = 'openai/gpt-4o-mini';
 
-export async function handleCompanyEnrichment(c: Context) {
+export async function handleCompanyEnrichment(c: Context<AppEnv>) {
   const requestStartTime = Date.now();
 
   try {
@@ -43,6 +44,7 @@ export async function handleCompanyEnrichment(c: Context) {
             hs_company_id,
             domain: normalizedDomain,
             company_id: existingCompany.id,
+            user_id: c.get('userId') || null,
             request_source: 'hubspot',
             request_type: 'cached',
             was_cached: true,
@@ -62,8 +64,8 @@ export async function handleCompanyEnrichment(c: Context) {
       }
     }
 
-    const aiGatewayKey = c.env?.AI_GATEWAY_API_KEY || process.env.AI_GATEWAY_API_KEY;
-    const firecrawlApiKey = c.env?.FIRECRAWL_API_KEY || process.env.FIRECRAWL_API_KEY;
+    const aiGatewayKey = (c.env as any)?.AI_GATEWAY_API_KEY || process.env.AI_GATEWAY_API_KEY;
+    const firecrawlApiKey = (c.env as any)?.FIRECRAWL_API_KEY || process.env.FIRECRAWL_API_KEY;
 
     if (!aiGatewayKey) {
       return c.json({ error: 'AI Gateway API key not configured' }, 500);
@@ -133,6 +135,7 @@ export async function handleCompanyEnrichment(c: Context) {
         hs_company_id: effectiveHsCompanyId,
         domain: normalizedDomain,
         company_id: savedCompany.id,
+        user_id: c.get('userId') || null,
         request_source: hs_company_id ? 'hubspot' : 'api',
         request_type: 'enrichment',
         was_cached: false,

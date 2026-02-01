@@ -7,8 +7,9 @@ import { handleContactResearch } from '../v1/research/contact.js';
 import { handleEmailSequenceGeneration } from '../v1/generate/email-sequence.js';
 import { handleContactSearch } from '../v1/search/contacts.js';
 import { handleCompanySearch } from '../v1/search/companies.js';
+import { AppEnv } from '../../types.js';
 
-const legacy = new Hono();
+const legacy = new Hono<AppEnv>();
 
 // POST /enrich → POST /v1/enrich/company
 legacy.post('/enrich', async (c) => {

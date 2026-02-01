@@ -2,8 +2,9 @@ import { Hono } from 'hono';
 import { Context } from 'hono';
 import { enrichContactByZoomInfoId, ContactEnrichByIdRequest } from '../../../lib/contact-enrich.js';
 import { saveEnrichmentRequest, EnrichmentRequestRecord } from '../../../lib/requests.js';
+import { AppEnv } from '../../../types.js';
 
-export async function handleContactEnrichmentById(c: Context) {
+export async function handleContactEnrichmentById(c: Context<AppEnv>) {
   const requestStartTime = Date.now();
 
   try {
@@ -14,11 +15,11 @@ export async function handleContactEnrichmentById(c: Context) {
       return c.json({ error: 'Missing required field: zoominfo_person_id' }, 400);
     }
 
-    const ziUsername = c.env?.ZI_USERNAME || process.env.ZI_USERNAME;
-    const ziPassword = c.env?.ZI_PASSWORD || process.env.ZI_PASSWORD;
-    const ziAuthUrl = c.env?.ZI_AUTH_URL || process.env.ZI_AUTH_URL;
-    const ziEnrichUrl = c.env?.ZI_ENRICH_URL || process.env.ZI_ENRICH_URL;
-    const hubspotToken = c.env?.HUBSPOT_ACCESS_TOKEN || process.env.HUBSPOT_ACCESS_TOKEN;
+    const ziUsername = (c.env as any)?.ZI_USERNAME || process.env.ZI_USERNAME;
+    const ziPassword = (c.env as any)?.ZI_PASSWORD || process.env.ZI_PASSWORD;
+    const ziAuthUrl = (c.env as any)?.ZI_AUTH_URL || process.env.ZI_AUTH_URL;
+    const ziEnrichUrl = (c.env as any)?.ZI_ENRICH_URL || process.env.ZI_ENRICH_URL;
+    const hubspotToken = (c.env as any)?.HUBSPOT_ACCESS_TOKEN || process.env.HUBSPOT_ACCESS_TOKEN;
 
     if (!ziUsername || !ziPassword || !ziAuthUrl || !ziEnrichUrl) {
       return c.json({ error: 'ZoomInfo credentials not configured' }, 500);
@@ -39,6 +40,7 @@ export async function handleContactEnrichmentById(c: Context) {
     const requestRecord: EnrichmentRequestRecord = {
       hs_company_id: hs_contact_id || `zi_person_${zoominfo_person_id}`,
       domain: result.data?.email_address || zoominfo_person_id,
+      user_id: c.get('userId') || null,
       request_source: 'api',
       request_type: result.was_cached ? 'contact-cached' : 'contact-enrich-by-id',
       was_cached: result.was_cached || false,
