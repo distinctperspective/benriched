@@ -488,27 +488,34 @@ async function associateContactWithCompany(
   companyId: string,
   hubspotToken: string
 ): Promise<boolean> {
-  console.log(`   🔗 Associating contact ${contactId} with company ${companyId}...`);
+  console.log(`   🔗 Associating contact ${contactId} with company ${companyId} as PRIMARY...`);
 
   try {
+    // Use v4 API to set company as PRIMARY company
     const response = await fetch(
-      `https://api.hubapi.com/crm/v3/objects/contacts/${contactId}/associations/companies/${companyId}/contact_to_company`,
+      `https://api.hubapi.com/crm/v4/objects/contacts/${contactId}/associations/company/${companyId}`,
       {
         method: 'PUT',
         headers: {
           'Authorization': `Bearer ${hubspotToken}`,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify([
+          {
+            associationCategory: 'HUBSPOT_DEFINED',
+            associationTypeId: 1, // Type 1 = Primary company
+          }
+        ]),
       }
     );
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`   ⚠️  Association failed: ${response.status} - ${errorText}`);
+      console.error(`   ⚠️  Primary company association failed: ${response.status} - ${errorText}`);
       return false;
     }
 
-    console.log(`   ✅ Contact associated with company`);
+    console.log(`   ✅ Contact associated with company as PRIMARY`);
     return true;
   } catch (error) {
     console.error(`   ⚠️  Association error:`, error);
