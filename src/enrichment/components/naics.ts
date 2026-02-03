@@ -165,9 +165,29 @@ export async function selectNAICSCodes(
     
     // Validate each code against approved list
     const validatedCodes: NAICSCode[] = [];
+
+    // Codes that require specific keywords in business description to be valid
+    // This prevents AI from incorrectly assigning pet food codes to human food companies, etc.
+    const RESTRICTED_CODES: Record<string, string[]> = {
+      '311111': ['pet food', 'dog food', 'cat food', 'pet treats', 'animal feed', 'pet nutrition'],
+      '311119': ['pet food', 'dog food', 'cat food', 'pet treats', 'animal feed', 'pet nutrition'],
+    };
+
+    const descLower = businessDescription.toLowerCase();
+
     for (const item of parsed) {
       const approved = approvedNaicsCodes.find(n => n.code === item.code);
       if (approved) {
+        // Check if this is a restricted code
+        const requiredKeywords = RESTRICTED_CODES[item.code];
+        if (requiredKeywords) {
+          const hasKeyword = requiredKeywords.some(kw => descLower.includes(kw));
+          if (!hasKeyword) {
+            console.log(`   ⚠️  NAICS code ${item.code} (${approved.description}) blocked - requires keywords: ${requiredKeywords.join(', ')}`);
+            continue;
+          }
+        }
+
         // Use exact description from approved list
         validatedCodes.push({
           code: item.code,

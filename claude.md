@@ -1142,3 +1142,13 @@ When testing enrichment:
 ### API Documentation
 
 For complete API documentation including all request/response formats, see [docs/API.md](docs/API.md)
+## Enrichment Debugging Protocol
+
+When the user questions an enrichment result:
+1. DO NOT run a new enrichment first
+2. Look at the existing logs/data in the database to understand what went wrong
+3. Investigate the code to find the bug
+4. Make the fix
+5. ONLY THEN run a new enrichment to verify the fix
+
+Stop wasting money on re-enrichments before understanding the issue.
