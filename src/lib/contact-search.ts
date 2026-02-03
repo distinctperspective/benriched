@@ -266,7 +266,6 @@ async function hubspotPreCheck(
         body: JSON.stringify({
           filterGroups,
           properties: ['firstname', 'lastname', 'email', 'company', 'jobtitle'],
-          associations: ['companies'],
           limit: 100,
         }),
       });
@@ -280,30 +279,34 @@ async function hubspotPreCheck(
       const data = await response.json();
       const results = data.results || [];
 
-      // Get company associations for each contact
+      // Get company associations using batch API
       const contactIds = results.map((r: any) => r.id);
       const contactCompanyMap = new Map<string, string>(); // contact_id -> company_id
 
       if (contactIds.length > 0) {
-        // Use v4 associations API to get contact->company mappings
-        for (const contactId of contactIds) {
-          try {
-            const assocResponse = await fetch(`https://api.hubapi.com/crm/v4/objects/contacts/${contactId}/associations/companies`, {
-              method: 'GET',
-              headers: {
-                'Authorization': "Bearer " + hubspotToken,
-              },
-            });
+        try {
+          // Batch associations API: get all contact->company associations in one call
+          const assocResponse = await fetch('https://api.hubapi.com/crm/v4/associations/contacts/companies/batch/read', {
+            method: 'POST',
+            headers: {
+              'Authorization': "Bearer " + hubspotToken,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              inputs: contactIds.map((id: string) => ({ id })),
+            }),
+          });
 
-            if (assocResponse.ok) {
-              const assocData = await assocResponse.json();
-              if (assocData.results?.[0]?.toObjectId) {
-                contactCompanyMap.set(contactId, String(assocData.results[0].toObjectId));
+          if (assocResponse.ok) {
+            const assocData = await assocResponse.json();
+            for (const result of assocData.results || []) {
+              if (result.from?.id && result.to?.[0]?.toObjectId) {
+                contactCompanyMap.set(result.from.id, String(result.to[0].toObjectId));
               }
             }
-          } catch (err) {
-            // Silent fail for individual lookups
           }
+        } catch (err) {
+          // Silent fail
         }
       }
 
