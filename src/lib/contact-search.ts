@@ -679,6 +679,19 @@ export async function searchAndEnrichContacts(
   let hubspotMatches = new Map<string, HubSpotMatch>();
   let hubspotCheckedCount = 0;
 
+  // Inject company name into all search results since ZoomInfo company search
+  // guarantees all returned contacts are from the searched company
+  const companyNameForResults = request.company_name || company.company_name || '';
+  if (companyNameForResults && searchResults.length > 0) {
+    console.log("    Injecting company name into search results: " + companyNameForResults);
+    for (const contact of searchResults) {
+      // Only set if not already present (though ZoomInfo search typically doesn't include it)
+      if (!contact.companyName) {
+        contact.companyName = companyNameForResults;
+      }
+    }
+  }
+
   if (checkHubspot && hubspotToken && searchResults.length > 0) {
     // Use company name from request, database lookup, or search results
     const companyNameForSearch = request.company_name || company.company_name || searchResults[0]?.companyName || '';
