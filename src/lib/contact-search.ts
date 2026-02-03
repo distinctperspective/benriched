@@ -16,6 +16,18 @@ const ICP_JOB_TITLE_KEYWORDS = [
   'Continuous Improvement', 'FSQA', 'Digital Transformation',
 ];
 
+// Executive titles to include for small companies (under 200 employees)
+const EXECUTIVE_TITLE_KEYWORDS = [
+  'Chief', 'CEO', 'CFO', 'COO', 'CIO', 'CTO',
+  'President', 'Owner', 'Founder', 'Partner',
+  'General Manager', 'Executive',
+];
+
+// Company size bands considered "small" - executives are key contacts
+const SMALL_COMPANY_SIZES = [
+  '0-1 Employees', '2-10 Employees', '11-50 Employees', '51-200 Employees',
+];
+
 // Abbreviation  full form map for title expansion before tier matching
 const TITLE_ABBREVIATIONS: Record<string, string> = {
   'CEO': 'Chief Executive Officer',
@@ -562,6 +574,21 @@ export async function searchAndEnrichContacts(
   console.log("   Filters: " + (managementLevels.join(', ')));
   console.log("   Max results per page: " + (maxResults) + (autoPaginate ? ' (auto-paginating all pages)' : ", Page: " + startPage));
 
+  // Early company lookup to determine if small company (affects search filters)
+  let isSmallCompany = false;
+  if (request.company_domain) {
+    const { data: companyData } = await supabase
+      .from('companies')
+      .select('company_size')
+      .eq('domain', request.company_domain)
+      .single();
+
+    if (companyData?.company_size && SMALL_COMPANY_SIZES.includes(companyData.company_size)) {
+      isSmallCompany = true;
+      console.log("   Small company detected (" + companyData.company_size + ") - including executive titles");
+    }
+  }
+
   // Get JWT token (mutable to allow refresh on 401)
   let jwtToken = await getZoomInfoToken(ziUsername, ziPassword, ziAuthUrl);
 
@@ -613,7 +640,12 @@ export async function searchAndEnrichContacts(
     if (request.job_titles?.length) {
       payload.jobTitle = request.job_titles.join(' OR ');
     } else if (useIcpFilter) {
-      payload.jobTitle = ICP_JOB_TITLE_KEYWORDS.join(' OR ');
+      // For small companies, include executive titles alongside ICP keywords
+      // This ensures we find CEOs, Founders, etc. who are often key contacts
+      const titleKeywords = isSmallCompany
+        ? [...ICP_JOB_TITLE_KEYWORDS, ...EXECUTIVE_TITLE_KEYWORDS]
+        : ICP_JOB_TITLE_KEYWORDS;
+      payload.jobTitle = titleKeywords.join(' OR ');
     }
     return payload;
   };
