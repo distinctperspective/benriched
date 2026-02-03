@@ -94,9 +94,29 @@ export async function resolveDomainToWebsite(
 
     console.log(`   📋 Discovered domains: ${Array.from(discoveredDomains).join(', ')}`);
 
-    // Check if the submitted domain appears in results
+    // Blacklist social media and platform domains that should never be resolved to
+    const BLACKLISTED_DOMAINS = new Set([
+      'linkedin.com',
+      'facebook.com',
+      'twitter.com',
+      'instagram.com',
+      'youtube.com',
+      'pinterest.com',
+      'tiktok.com',
+      'reddit.com',
+      'wikipedia.org',
+      'crunchbase.com',
+      'bloomberg.com',
+      'reuters.com',
+      'forbes.com'
+    ]);
+
+    // Remove blacklisted domains from discovered domains
+    const validDomains = Array.from(discoveredDomains).filter(d => !BLACKLISTED_DOMAINS.has(d));
+
+    // Check if the submitted domain appears in results (exact match)
     const submittedDomainNormalized = domain.replace(/^www\./, '');
-    if (discoveredDomains.has(submittedDomainNormalized)) {
+    if (validDomains.includes(submittedDomainNormalized)) {
       console.log(`   ✅ Submitted domain found in results - using original`);
       return {
         submitted_domain: domain,
@@ -108,14 +128,39 @@ export async function resolveDomainToWebsite(
       };
     }
 
-    // Look for a primary domain (most common in results or first result)
+    // Check for fuzzy match (submitted domain is similar to discovered domain)
+    // Example: willamettehazelnuts.com vs whazelnut.com
+    const submittedCore = submittedDomainNormalized.split('.')[0].toLowerCase();
+    for (const discoveredDomain of validDomains) {
+      const discoveredCore = discoveredDomain.split('.')[0].toLowerCase();
+      // If discovered domain is a substring of submitted, or vice versa (with 50%+ overlap)
+      if (submittedCore.includes(discoveredCore) || discoveredCore.includes(submittedCore)) {
+        const overlapRatio = Math.min(submittedCore.length, discoveredCore.length) / Math.max(submittedCore.length, discoveredCore.length);
+        if (overlapRatio >= 0.5) {
+          console.log(`   🔄 Fuzzy match found: ${submittedDomainNormalized} ≈ ${discoveredDomain} - using original`);
+          return {
+            submitted_domain: domain,
+            resolved_domain: domain,
+            domain_changed: false,
+            resolution_method: 'search',
+            search_results: searchResults,
+            credits_used: 1
+          };
+        }
+      }
+    }
+
+    // Look for a primary domain (most common in valid results)
     const domainCounts = new Map<string, number>();
     for (const result of searchResults) {
       if (result.url) {
         try {
           const url = new URL(result.url);
           const hostname = url.hostname.replace(/^www\./, '');
-          domainCounts.set(hostname, (domainCounts.get(hostname) || 0) + 1);
+          // Only count non-blacklisted domains
+          if (!BLACKLISTED_DOMAINS.has(hostname)) {
+            domainCounts.set(hostname, (domainCounts.get(hostname) || 0) + 1);
+          }
         } catch (e) {
           // Invalid URL, skip
         }
@@ -132,9 +177,12 @@ export async function resolveDomainToWebsite(
       }
     }
 
-    // If we found a different domain, use it
-    if (resolvedDomain !== submittedDomainNormalized) {
-      console.log(`   🔄 Domain resolved: ${domain} → ${resolvedDomain}`);
+    // Only change domain if:
+    // 1. We found a different domain
+    // 2. That domain appears at least 2 times in results (strong signal)
+    // 3. OR if the first search result is from that domain (very strong signal)
+    if (resolvedDomain !== submittedDomainNormalized && maxCount >= 2) {
+      console.log(`   🔄 Domain resolved: ${domain} → ${resolvedDomain} (appeared ${maxCount} times)`);
       return {
         submitted_domain: domain,
         resolved_domain: resolvedDomain,
