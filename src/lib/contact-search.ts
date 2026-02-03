@@ -136,6 +136,27 @@ interface TitleMatch {
 }
 
 /**
+ * Compare two company names for matching, handling common variations.
+ * Normalizes by removing Inc, LLC, Corp, etc. and comparing case-insensitively.
+ */
+function compareCompanyNames(ziName: string | undefined, hsName: string | undefined): boolean {
+  if (!ziName || !hsName) return false;
+
+  // Normalize names (lowercase, remove Inc/LLC/etc, trim whitespace)
+  const normalize = (name: string) =>
+    name.toLowerCase()
+      .replace(/\b(inc|llc|ltd|corp|corporation|company|co|incorporated)\b\.?/g, '')
+      .replace(/[,\.]/g, '') // Remove commas and periods
+      .trim();
+
+  const n1 = normalize(ziName);
+  const n2 = normalize(hsName);
+
+  // Exact match or one contains the other (e.g., "Acme" matches "Acme Corporation")
+  return n1 === n2 || n1.includes(n2) || n2.includes(n1);
+}
+
+/**
  * Load titles from DB and match a job title against them.
  * Returns tier info. Uses normalized lowercase comparison.
  */
@@ -245,6 +266,9 @@ async function hubspotPreCheck(
             firstName: hs.properties.firstname,
             lastName: hs.properties.lastname,
             hs_contact_id: hs.id,
+            company: hs.properties.company,
+            email: hs.properties.email,
+            jobtitle: hs.properties.jobtitle,
           });
         }
       }
@@ -783,10 +807,33 @@ export async function searchAndEnrichContacts(
         linked_profile_url: linkedInUrl,
       };
 
-      // Add HubSpot match info if found
+      // Add HubSpot match info if found (with company verification)
       if (hsMatch) {
-        (contactRecord as any).in_hubspot = true;
-        (contactRecord as any).hs_contact_id = hsMatch.hs_contact_id;
+        // Priority 1: Email match (most reliable)
+        const emailMatches = email && hsMatch.email &&
+          email.toLowerCase() === hsMatch.email.toLowerCase();
+
+        // Priority 2: Name + company match
+        const companyMatches = compareCompanyNames(contact.companyName, hsMatch.company);
+
+        if (emailMatches) {
+          // Email match = highest confidence
+          (contactRecord as any).in_hubspot = true;
+          (contactRecord as any).hs_contact_id = hsMatch.hs_contact_id;
+          (contactRecord as any).match_confidence = 'exact';
+        } else if (companyMatches) {
+          // Name + company match = high confidence
+          (contactRecord as any).in_hubspot = true;
+          (contactRecord as any).hs_contact_id = hsMatch.hs_contact_id;
+          (contactRecord as any).match_confidence = 'high';
+        } else {
+          // Name matches but different company = likely false positive
+          (contactRecord as any).in_hubspot = false;
+          (contactRecord as any).match_confidence = 'name_only_mismatch';
+          console.log("    ⚠️  HubSpot match rejected: " + contact.firstName + " " + contact.lastName +
+            " at " + (contact.companyName || 'unknown') +
+            " != " + (hsMatch.company || 'unknown'));
+        }
       }
 
       // Save to DB
@@ -836,9 +883,30 @@ export async function searchAndEnrichContacts(
         ? matchTitleFromCache(sc.jobTitle, titlesCache)
         : { tier: 'Tier 0 (Unknown)', tier_rank: 0, matched_title: null };
 
-      // Check if in HubSpot
+      // Check if in HubSpot (with company verification)
       const key = (sc.firstName || '').toLowerCase().trim() + "|" + (sc.lastName || '').toLowerCase().trim();
       const hsMatch = hubspotMatches.get(key);
+
+      let inHubSpot = false;
+      let hsContactId: string | undefined = undefined;
+      let matchConfidence: string | undefined = undefined;
+
+      if (hsMatch) {
+        // Verify company match before flagging as in_hubspot
+        const companyMatches = compareCompanyNames(sc.companyName, hsMatch.company);
+
+        if (companyMatches) {
+          inHubSpot = true;
+          hsContactId = hsMatch.hs_contact_id;
+          matchConfidence = 'high';
+        } else {
+          // Name matches but different company = false positive
+          matchConfidence = 'name_only_mismatch';
+          console.log("    ⚠️  HubSpot match rejected: " + sc.firstName + " " + sc.lastName +
+            " at " + (sc.companyName || 'unknown') +
+            " != " + (hsMatch.company || 'unknown'));
+        }
+      }
 
       const contactRecord = {
         email_address: '',
@@ -857,8 +925,9 @@ export async function searchAndEnrichContacts(
         icp_tier: tierMatch.tier,
         icp_tier_rank: tierMatch.tier_rank,
         icp_matched_title: tierMatch.matched_title,
-        in_hubspot: hsMatch ? true : false,
-        hs_contact_id: hsMatch?.hs_contact_id || undefined,
+        in_hubspot: inHubSpot,
+        hs_contact_id: hsContactId,
+        match_confidence: matchConfidence,
       } as any;
 
       enrichedContacts.push(contactRecord);
