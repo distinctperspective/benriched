@@ -136,10 +136,26 @@ interface TitleMatch {
 }
 
 /**
- * Compare two company names for matching, handling common variations.
- * Normalizes by removing Inc, LLC, Corp, etc. and comparing case-insensitively.
+ * Compare company match using ZoomInfo ID first, then fall back to name matching.
+ *
+ * @param ziCompanyId - ZoomInfo company ID from search results
+ * @param hsCompanyZoomInfoId - ZoomInfo company ID stored in HubSpot company
+ * @param ziName - Company name from ZoomInfo
+ * @param hsName - Company name from HubSpot
+ * @returns true if companies match
  */
-function compareCompanyNames(ziName: string | undefined, hsName: string | undefined): boolean {
+function compareCompanyMatch(
+  ziCompanyId: string | undefined,
+  hsCompanyZoomInfoId: string | undefined,
+  ziName: string | undefined,
+  hsName: string | undefined
+): boolean {
+  // Primary match: Compare ZoomInfo company IDs (most reliable)
+  if (ziCompanyId && hsCompanyZoomInfoId && ziCompanyId === hsCompanyZoomInfoId) {
+    return true;
+  }
+
+  // Fallback: Fuzzy name matching
   if (!ziName || !hsName) return false;
 
   // Normalize names (lowercase, remove Inc/LLC/etc, trim whitespace)
@@ -200,6 +216,10 @@ interface HubSpotMatch {
   firstName: string;
   lastName: string;
   hs_contact_id: string;
+  company?: string;
+  email?: string;
+  jobtitle?: string;
+  company_zoominfo_id?: string;
 }
 
 /**
@@ -209,6 +229,7 @@ interface HubSpotMatch {
 async function hubspotPreCheck(
   contacts: ZoomInfoSearchContact[],
   companyName: string,
+  zoomInfoCompanyId: string | undefined,
   hubspotToken: string
 ): Promise<Map<string, HubSpotMatch>> {
   const matchMap = new Map<string, HubSpotMatch>(); // key: "firstname|lastname" lowercase
@@ -245,6 +266,7 @@ async function hubspotPreCheck(
         body: JSON.stringify({
           filterGroups,
           properties: ['firstname', 'lastname', 'email', 'company', 'jobtitle'],
+          associations: ['companies'],
           limit: 100,
         }),
       });
@@ -258,10 +280,74 @@ async function hubspotPreCheck(
       const data = await response.json();
       const results = data.results || [];
 
+      // Get company associations for each contact
+      const contactIds = results.map((r: any) => r.id);
+      const contactCompanyMap = new Map<string, string>(); // contact_id -> company_id
+
+      if (contactIds.length > 0) {
+        // Use v4 associations API to get contact->company mappings
+        for (const contactId of contactIds) {
+          try {
+            const assocResponse = await fetch(`https://api.hubapi.com/crm/v4/objects/contacts/${contactId}/associations/companies`, {
+              method: 'GET',
+              headers: {
+                'Authorization': "Bearer " + hubspotToken,
+              },
+            });
+
+            if (assocResponse.ok) {
+              const assocData = await assocResponse.json();
+              if (assocData.results?.[0]?.toObjectId) {
+                contactCompanyMap.set(contactId, String(assocData.results[0].toObjectId));
+              }
+            }
+          } catch (err) {
+            // Silent fail for individual lookups
+          }
+        }
+      }
+
+      // Extract unique company IDs
+      const companyIds: string[] = Array.from(new Set(contactCompanyMap.values()));
+
+      // Fetch company ZoomInfo IDs in batch
+      const companyZoomInfoIds = new Map<string, string>(); // hs_company_id -> zoominfo_company_id
+      if (companyIds.length > 0 && hubspotToken) {
+        try {
+          const companyResponse = await fetch('https://api.hubapi.com/crm/v3/objects/companies/batch/read', {
+            method: 'POST',
+            headers: {
+              'Authorization': "Bearer " + hubspotToken,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              inputs: companyIds.map(id => ({ id })),
+              properties: ['zoominfo_company_id'],
+            }),
+          });
+
+          if (companyResponse.ok) {
+            const companyData = await companyResponse.json();
+            for (const company of companyData.results || []) {
+              const ziId = company.properties?.zoominfo_company_id;
+              if (ziId) {
+                companyZoomInfoIds.set(company.id, ziId);
+              }
+            }
+          }
+        } catch (err) {
+          console.log("    HubSpot company batch read error: " + (err instanceof Error ? err.message : err));
+        }
+      }
+
       for (const hs of results) {
         const fn = (hs.properties?.firstname || '').toLowerCase().trim();
         const ln = (hs.properties?.lastname || '').toLowerCase().trim();
         if (fn && ln) {
+          // Get ZoomInfo company ID from associated company
+          const hsCompanyId = contactCompanyMap.get(hs.id);
+          const companyZoomInfoId = hsCompanyId ? companyZoomInfoIds.get(hsCompanyId) : undefined;
+
           matchMap.set((fn) + "|" + (ln), {
             firstName: hs.properties.firstname,
             lastName: hs.properties.lastname,
@@ -269,6 +355,7 @@ async function hubspotPreCheck(
             company: hs.properties.company,
             email: hs.properties.email,
             jobtitle: hs.properties.jobtitle,
+            company_zoominfo_id: companyZoomInfoId,
           });
         }
       }
@@ -696,7 +783,7 @@ export async function searchAndEnrichContacts(
     // Use company name from request, database lookup, or search results
     const companyNameForSearch = request.company_name || company.company_name || searchResults[0]?.companyName || '';
     if (companyNameForSearch) {
-      hubspotMatches = await hubspotPreCheck(searchResults, companyNameForSearch, hubspotToken);
+      hubspotMatches = await hubspotPreCheck(searchResults, companyNameForSearch, company.zoominfo_company_id, hubspotToken);
       hubspotCheckedCount = searchResults.length;
     }
   }
@@ -826,8 +913,13 @@ export async function searchAndEnrichContacts(
         const emailMatches = email && hsMatch.email &&
           email.toLowerCase() === hsMatch.email.toLowerCase();
 
-        // Priority 2: Name + company match
-        const companyMatches = compareCompanyNames(contact.companyName, hsMatch.company);
+        // Priority 2: Company match (ZoomInfo ID or name)
+        const companyMatches = compareCompanyMatch(
+          company.zoominfo_company_id,
+          hsMatch.company_zoominfo_id,
+          contact.companyName,
+          hsMatch.company
+        );
 
         if (emailMatches) {
           // Email match = highest confidence
@@ -905,8 +997,13 @@ export async function searchAndEnrichContacts(
       let matchConfidence: string | undefined = undefined;
 
       if (hsMatch) {
-        // Verify company match before flagging as in_hubspot
-        const companyMatches = compareCompanyNames(sc.companyName, hsMatch.company);
+        // Verify company match (ZoomInfo ID or name) before flagging as in_hubspot
+        const companyMatches = compareCompanyMatch(
+          company.zoominfo_company_id,
+          hsMatch.company_zoominfo_id,
+          sc.companyName,
+          hsMatch.company
+        );
 
         if (companyMatches) {
           inHubSpot = true;
