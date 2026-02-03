@@ -1,6 +1,12 @@
 import { supabase } from './supabase.js';
 
 export interface RawApiResponses {
+  domainResolution?: {
+    submitted_domain: string;
+    resolved_domain: string;
+    domain_changed: boolean;
+    resolution_method: string;
+  };
   pass1?: string;
   pass2?: string;
   deepResearch?: string;
