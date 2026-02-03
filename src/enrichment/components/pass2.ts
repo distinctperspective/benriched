@@ -307,14 +307,18 @@ export async function pass2_analyzeContentWithUsage(
       city: (() => {
         const pass2City = parsed.city?.toLowerCase() !== 'unknown' ? parsed.city : null;
         const pass1City = pass1Data?.headquarters?.city;
-        // Prefer Pass 1 if available, otherwise use Pass 2
-        return pass1City || pass2City || 'unknown';
+        // Check if Pass 1 has valid (non-Unknown) city
+        const pass1HasValidCity = pass1City && pass1City.toLowerCase() !== 'unknown';
+        // Prefer Pass 1 if available AND valid, otherwise use Pass 2
+        return (pass1HasValidCity ? pass1City : null) || pass2City || 'unknown';
       })(),
       state: (() => {
         const pass2State = parsed.state?.toLowerCase() !== 'unknown' ? parsed.state : null;
         const pass1State = pass1Data?.headquarters?.state;
-        // Prefer Pass 1 if available, otherwise use Pass 2
-        return pass1State || pass2State || null;
+        // Check if Pass 1 has valid (non-Unknown) state
+        const pass1HasValidState = pass1State && pass1State.toLowerCase() !== 'unknown';
+        // Prefer Pass 1 if available AND valid, otherwise use Pass 2
+        return (pass1HasValidState ? pass1State : null) || pass2State || null;
       })(),
       hq_country: (() => {
         const pass2Country = countryNameToCode(parsed.hq_country);
