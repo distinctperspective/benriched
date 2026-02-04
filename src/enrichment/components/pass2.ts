@@ -349,7 +349,7 @@ export async function pass2_analyzeContentWithUsage(
         size: { confidence: 'low', reasoning: 'Could not determine company size' },
         industry: { confidence: 'low', reasoning: 'Could not determine industry' }
       },
-      target_icp: targetIcp,
+      // target_icp removed - calculated by database trigger
       target_icp_matches: targetIcpMatches,
       revenue_pass: finalRevenue ? PASSING_REVENUE_BANDS.has(finalRevenue) : false,
       industry_pass: targetIcpMatches.length > 0,
@@ -381,7 +381,7 @@ export async function pass2_analyzeContentWithUsage(
           size: { confidence: 'low', reasoning: 'Could not parse structured response' },
           industry: { confidence: 'low', reasoning: 'Could not parse structured response' }
         },
-        target_icp: false,
+        // target_icp removed - calculated by database trigger
         target_icp_matches: [],
         revenue_pass: false,
         industry_pass: false

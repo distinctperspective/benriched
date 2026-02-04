@@ -122,7 +122,7 @@ export interface EnrichmentResult {
   is_us_subsidiary: boolean;
   source_urls: string[];
   quality: QualityMetrics;
-  target_icp: boolean;
+  target_icp?: boolean; // Optional - calculated by database trigger
   target_icp_matches: TargetICPMatch[];
   revenue_pass: boolean;
   industry_pass: boolean;
