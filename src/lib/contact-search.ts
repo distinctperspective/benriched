@@ -459,6 +459,155 @@ const PERSONA_IDS = {
   CORPORATE: 'c0d8459d-9259-48b0-b4dd-ab2da8db76a6',
 };
 
+// Persona ID to frontend label mapping
+const PERSONA_LABELS: Record<string, string> = {
+  [PERSONA_IDS.QUALITY_EHS]: "Champion",              // Quality/Safety → Champion
+  [PERSONA_IDS.IT]: "Technical Evaluator",            // IT → Technical Evaluator
+  [PERSONA_IDS.PRODUCTION]: "Site Lead",              // Production → Site Lead
+  [PERSONA_IDS.SUPPLY_CHAIN]: "Champion",             // Supply Chain → Champion
+  [PERSONA_IDS.ENGINEERING]: "Technical Evaluator",   // Engineering → Technical Evaluator
+  [PERSONA_IDS.PLANT_LEADERSHIP]: "Executive Sponsor", // Plant Leadership → Executive Sponsor
+  [PERSONA_IDS.MAINTENANCE]: "Champion",              // Maintenance → Champion
+  [PERSONA_IDS.CORPORATE]: "Economic Buyer",          // Corporate → Economic Buyer
+};
+
+// Default personas by tier for unknown titles
+const TIER_DEFAULT_PERSONAS: Record<string, string> = {
+  "Tier 4 (Ultimate)": "Economic Buyer",       // C-suite, Presidents
+  "Tier 3 (Strong Owner)": "Executive Sponsor", // VPs, Directors
+  "Tier 2 (Manager / Recommender)": "Champion", // Managers
+  "Tier 1 (Individual Contributor)": "Technical Evaluator",
+  "Tier 0 (Unknown)": "Technical Evaluator",
+};
+
+/**
+ * Determine engagement status based on HubSpot presence and ICP classification
+ */
+function determineContactStatus(
+  in_hubspot: boolean,
+  is_icp: boolean,
+  hubspot_lifecycle_stage?: string
+): string {
+  // Already engaged in HubSpot
+  if (in_hubspot) {
+    if (hubspot_lifecycle_stage === "customer") return "ENGAGED";
+    if (hubspot_lifecycle_stage === "opportunity") return "LATE STAGE";
+    if (hubspot_lifecycle_stage === "lead" || hubspot_lifecycle_stage === "marketingqualifiedlead") {
+      return "LATE STAGE";
+    }
+    return "LATE STAGE";
+  }
+
+  // Not in HubSpot - check ICP status
+  if (!is_icp) {
+    return "EXCLUDED";
+  }
+
+  // New ICP contact
+  return "TARGET";
+}
+
+/**
+ * Generate reasoning for why this contact is important
+ */
+function generateContactReasoning(
+  job_title: string,
+  icp_tier: string,
+  persona_label: string,
+  is_icp: boolean,
+  icp_exclusion_reason: string | null,
+  match_confidence?: string
+): string {
+  // Non-ICP contacts
+  if (!is_icp && icp_exclusion_reason) {
+    return `Excluded from ICP due to title keyword: "${icp_exclusion_reason}"`;
+  }
+
+  const tier_reasoning: Record<string, string> = {
+    "Tier 4 (Ultimate)": "Executive-level decision maker with budget authority",
+    "Tier 3 (Strong Owner)": "Senior leader who can champion initiatives internally",
+    "Tier 2 (Manager / Recommender)": "Operational manager who influences purchasing decisions",
+    "Tier 1 (Individual Contributor)": "Hands-on practitioner who can validate technical fit",
+    "Tier 0 (Unknown)": "Potential stakeholder based on job title",
+  };
+
+  const base_reasoning = tier_reasoning[icp_tier] || "Stakeholder in the decision-making process";
+
+  if (match_confidence === "high") {
+    return `${base_reasoning}. High-confidence title match indicates strong ICP alignment.`;
+  } else if (match_confidence === "medium") {
+    return `${base_reasoning}. Moderate title match suggests potential influence.`;
+  }
+
+  return `${base_reasoning}. Role as ${persona_label} indicates involvement in evaluation or approval.`;
+}
+
+/**
+ * Generate engagement strategy based on persona and tier
+ */
+function generateEngagementStrategy(
+  persona_label: string,
+  icp_tier: string,
+  in_hubspot: boolean,
+  has_email: boolean,
+  has_direct_phone: boolean
+): string {
+  const persona_strategies: Record<string, string> = {
+    "Economic Buyer": "ROI-focused pitch highlighting cost savings and operational efficiency gains. Schedule executive briefing.",
+    "Executive Sponsor": "Strategic value discussion emphasizing competitive advantage and risk mitigation. Seek internal champion introduction.",
+    "Financial Buyer": "Business case presentation with detailed ROI calculations and payback period analysis.",
+    "Champion": "Product demo showcasing specific pain point solutions. Build relationship through regular check-ins.",
+    "Site Lead": "Facility-level value prop focusing on day-to-day operational improvements. Offer site visit or pilot program.",
+    "Technical Evaluator": "Technical deep-dive on integrations, security, and implementation. Provide detailed documentation and sandbox access.",
+  };
+
+  let strategy = persona_strategies[persona_label] || "Consultative approach to understand needs and priorities.";
+
+  if (in_hubspot) {
+    strategy += " Already in CRM - leverage existing relationship and previous interactions.";
+  } else if (has_email && has_direct_phone) {
+    strategy += " Multi-channel outreach: email introduction followed by phone call.";
+  } else if (has_email) {
+    strategy += " Email outreach with personalized value proposition.";
+  } else if (has_direct_phone) {
+    strategy += " Direct phone outreach - voicemail with follow-up email.";
+  } else {
+    strategy += " LinkedIn connection request with personalized message.";
+  }
+
+  return strategy;
+}
+
+/**
+ * Assign priority level based on tier and ICP status
+ */
+function assignContactPriority(
+  icp_tier: string,
+  is_icp: boolean,
+  in_hubspot: boolean,
+  contact_accuracy_score: number
+): string {
+  if (!is_icp) return "low";
+
+  // High priority: Tier 4 (C-suite) with high accuracy
+  if (icp_tier === "Tier 4 (Ultimate)" && contact_accuracy_score >= 90) {
+    return "high";
+  }
+
+  // High priority: Already in HubSpot + Tier 3/4
+  if (in_hubspot && (icp_tier.includes("Tier 4") || icp_tier.includes("Tier 3"))) {
+    return "high";
+  }
+
+  // Medium priority: Tier 2/3 with good accuracy
+  if ((icp_tier.includes("Tier 2") || icp_tier.includes("Tier 3")) && contact_accuracy_score >= 70) {
+    return "medium";
+  }
+
+  // Default to low for Tier 0/1 or low accuracy
+  return "low";
+}
+
 /** Infer persona from job title keywords */
 function inferPersonaFromTitle(title: string): string | null {
   const t = title.toLowerCase();
@@ -1137,6 +1286,58 @@ export async function searchAndEnrichContacts(
       contact.is_icp = true;
       contact.icp_exclusion_reason = null;
     }
+  }
+
+  // Populate buying committee fields (persona, status, reasoning, strategy, priority)
+  console.log("    Populating buying committee fields for " + enrichedContacts.length + " contacts...");
+  for (const contact of enrichedContacts as any[]) {
+    // Get persona ID and label
+    const persona_id = inferPersonaFromTitle(contact.job_title || '');
+    const persona_label = persona_id
+      ? (PERSONA_LABELS[persona_id] || TIER_DEFAULT_PERSONAS[contact.icp_tier || 'Tier 0 (Unknown)'])
+      : TIER_DEFAULT_PERSONAS[contact.icp_tier || 'Tier 0 (Unknown)'];
+
+    // Determine status
+    const status = determineContactStatus(
+      contact.in_hubspot || false,
+      contact.is_icp !== false,
+      undefined // hubspot_lifecycle_stage not available in search
+    );
+
+    // Generate reasoning
+    const reasoning = generateContactReasoning(
+      contact.job_title || '',
+      contact.icp_tier || 'Tier 0 (Unknown)',
+      persona_label,
+      contact.is_icp !== false,
+      contact.icp_exclusion_reason || null,
+      contact.match_confidence
+    );
+
+    // Generate engagement strategy
+    const engagement_strategy = generateEngagementStrategy(
+      persona_label,
+      contact.icp_tier || 'Tier 0 (Unknown)',
+      contact.in_hubspot || false,
+      contact.has_email || false,
+      contact.has_direct_phone || false
+    );
+
+    // Assign priority
+    const priority = assignContactPriority(
+      contact.icp_tier || 'Tier 0 (Unknown)',
+      contact.is_icp !== false,
+      contact.in_hubspot || false,
+      contact.contact_accuracy_score || 0
+    );
+
+    // Set the new fields
+    contact.persona = persona_id;
+    contact.persona_label = persona_label;
+    contact.status = status;
+    contact.reasoning = reasoning;
+    contact.engagement_strategy = engagement_strategy;
+    contact.priority = priority;
   }
 
   // Optionally filter out non-ICP contacts

@@ -49,6 +49,21 @@ export interface ContactRecord {
   linked_profile_url?: string;
   created_at?: string;
   updated_at?: string;
+
+  // ICP fields
+  icp_tier?: string;
+  icp_tier_rank?: number;
+  icp_matched_title?: string;
+  is_icp?: boolean;
+  icp_exclusion_reason?: string | null;
+
+  // Buying committee fields
+  persona?: string | null;              // Persona UUID reference
+  persona_label?: string | null;        // Human-readable persona name
+  status?: string | null;               // Engagement status: TARGET, LATE STAGE, ENGAGED, EXCLUDED
+  reasoning?: string | null;            // Why this contact matters
+  engagement_strategy?: string | null;  // How to engage this person
+  priority?: string | null;             // "high", "medium", "low"
 }
 
 export interface ContactEnrichByIdRequest {
