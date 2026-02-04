@@ -105,7 +105,7 @@ export async function handleCompanyEnrichment(c: Context<AppEnv>) {
       is_us_subsidiary: result.is_us_subsidiary,
       naics_codes_6_digit: result.naics_codes_6_digit || [],
       naics_codes_csv: result.naics_codes_csv,
-      target_icp: result.target_icp,
+      // target_icp removed - calculated by database trigger
       target_icp_matches: result.target_icp_matches || [],
       source_urls: result.source_urls || [],
       quality: result.quality,

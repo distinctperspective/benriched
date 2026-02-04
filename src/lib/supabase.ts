@@ -21,7 +21,7 @@ export interface CompanyRecord {
   is_us_subsidiary: boolean;
   naics_codes_6_digit: Array<{ code: string; description: string }>;
   naics_codes_csv: string | null;
-  target_icp: boolean;
+  target_icp?: boolean; // Optional - calculated by database trigger
   target_icp_matches: Array<{ code: string; description: string }>;
   source_urls: string[];
   quality: Record<string, any>;
