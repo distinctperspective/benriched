@@ -850,6 +850,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           was_cached: false,
           cost_usd: result.cost.total.costUsd,
           response_time_ms: responseTimeMs,
+          raw_api_responses: result.raw_api_responses || null,
+          enrichment_cost: result.cost || null,
         });
       }
 
