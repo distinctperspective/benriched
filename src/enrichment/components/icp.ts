@@ -31,8 +31,7 @@ async function loadTargetNaicsCodes(): Promise<void> {
   isNaicsLoaded = true;
 }
 
-// Initialize NAICS codes on module load
-loadTargetNaicsCodes().catch(console.error);
+// NAICS codes will be loaded lazily on first use via getMatchingNaics() or hasMatchingNaics()
 
 // Valid revenue bands
 export const VALID_REVENUE_BANDS = new Set([
