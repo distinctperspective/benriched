@@ -1,4 +1,5 @@
-import { supabase } from './supabase.js';
+import { supabase as defaultSupabase } from './supabase.js';
+import { SupabaseClient } from '@supabase/supabase-js';
 
 export interface RawApiResponses {
   domainResolution?: {
@@ -40,7 +41,11 @@ export interface EnrichmentRequestRecord {
   created_at?: string;
 }
 
-export async function saveEnrichmentRequest(request: EnrichmentRequestRecord): Promise<{ data: EnrichmentRequestRecord | null; error: any }> {
+export async function saveEnrichmentRequest(
+  request: EnrichmentRequestRecord,
+  supabaseClient?: SupabaseClient
+): Promise<{ data: EnrichmentRequestRecord | null; error: any }> {
+  const supabase = supabaseClient || defaultSupabase;
   const { data, error } = await supabase
     .from('enrichment_requests')
     .insert(request)

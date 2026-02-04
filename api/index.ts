@@ -15,6 +15,7 @@ import {
   removeExclusionKeyword,
   listExclusionKeywords,
 } from '../src/lib/icp-exclusions.js';
+import { saveEnrichmentRequest, EnrichmentRequestRecord } from '../src/lib/requests.js';
 
 const SEARCH_MODEL_ID = 'perplexity/sonar-pro';
 const ANALYSIS_MODEL_ID = 'openai/gpt-4o-mini';
@@ -841,7 +842,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       
       if (savedCompany) {
         const responseTimeMs = Date.now() - requestStartTime;
-        await supabase.from('enrichment_requests').insert({
+        const requestRecord: EnrichmentRequestRecord = {
           hs_company_id: companyId || `api_${requestId}`,
           domain: normalizedDomain,
           company_id: savedCompany.id,
@@ -852,7 +853,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           response_time_ms: responseTimeMs,
           raw_api_responses: result.raw_api_responses || null,
           enrichment_cost: result.cost || null,
-        });
+        };
+        await saveEnrichmentRequest(requestRecord, supabase);
       }
 
       return result;
