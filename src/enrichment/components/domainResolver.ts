@@ -94,8 +94,9 @@ export async function resolveDomainToWebsite(
 
     console.log(`   📋 Discovered domains: ${Array.from(discoveredDomains).join(', ')}`);
 
-    // Blacklist social media and platform domains that should never be resolved to
+    // Blacklist social media, platforms, and aggregator sites that should never be resolved to
     const BLACKLISTED_DOMAINS = new Set([
+      // Social media
       'linkedin.com',
       'facebook.com',
       'twitter.com',
@@ -104,11 +105,32 @@ export async function resolveDomainToWebsite(
       'pinterest.com',
       'tiktok.com',
       'reddit.com',
+      // News/media
       'wikipedia.org',
-      'crunchbase.com',
       'bloomberg.com',
       'reuters.com',
-      'forbes.com'
+      'forbes.com',
+      // Business data aggregators
+      'crunchbase.com',
+      'zoominfo.com',
+      'apollo.io',
+      'dnb.com',
+      'owler.com',
+      'growjo.com',
+      'datanyze.com',
+      // Website comparison/aggregator sites - these list OTHER companies, not themselves
+      'sitelike.org',
+      'similarweb.com',
+      'similarsites.com',
+      'alternativeto.net',
+      'siteslike.com',
+      'sitelikethis.com',
+      'moreofit.com',
+      'alexa.com',
+      // Job sites
+      'glassdoor.com',
+      'indeed.com',
+      'ziprecruiter.com',
     ]);
 
     // Remove blacklisted domains from discovered domains
