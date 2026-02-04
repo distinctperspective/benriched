@@ -406,6 +406,12 @@ function tierToRank(tier: string): number {
   return 0;
 }
 
+/** Extract the tier label from the full tier string, e.g., "Tier 4 (Ultimate)" → "Ultimate" */
+function extractTierLabel(tier: string): string {
+  const match = tier.match(/\(([^)]+)\)/);
+  return match ? match[1] : 'Unknown';
+}
+
 /** Check if contact has any reachable contact data (email or phone) */
 function hasAnyContactData(c: ZoomInfoSearchContact): boolean {
   return c.hasEmail === true ||
@@ -1233,8 +1239,9 @@ export async function searchAndEnrichContacts(
         has_supplemental_email: sc.hasSupplementalEmail,
         has_direct_phone: sc.hasDirectPhone,
         has_mobile_phone: sc.hasMobilePhone,
-        icp_tier: tierMatch.tier,
-        icp_tier_rank: tierMatch.tier_rank,
+        icp_tier: tierMatch.tier, // Full tier string e.g., "Tier 4 (Ultimate)"
+        icp_tier_rank: tierMatch.tier_rank, // Numeric rank: 4, 3, 2, 1, 0
+        icp_tier_label: extractTierLabel(tierMatch.tier), // Just the label: "Ultimate", "Strong Owner", etc.
         icp_matched_title: tierMatch.matched_title,
         lookup_persona: tierMatch.primary_persona, // Persona ID from titles lookup table
         lookup_persona_title: tierMatch.persona_title, // Persona title from titles lookup (e.g., "Quality & EHS")
