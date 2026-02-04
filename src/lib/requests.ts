@@ -56,12 +56,12 @@ export async function saveEnrichmentRequest(
 }
 
 export async function getEnrichmentRequestByHsCompany(hsCompanyId: string, domain: string): Promise<{ data: EnrichmentRequestRecord | null; error: any }> {
-  const { data, error } = await supabase
+  const { data, error } = await defaultSupabase
     .from('enrichment_requests')
     .select('*')
     .eq('hs_company_id', hsCompanyId)
     .eq('domain', domain)
     .single();
-  
+
   return { data, error };
 }
