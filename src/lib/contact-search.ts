@@ -146,6 +146,7 @@ interface TitleMatch {
   tier_rank: number; // 4=Ultimate, 3=Strong Owner, 2=Manager, 1=IC, 0=Unknown
   matched_title: string | null;
   primary_persona: string | null; // Persona ID from lookup table
+  persona_title: string | null; // Persona title (e.g., "Quality & EHS") from lookup
 }
 
 /**
@@ -192,37 +193,50 @@ function compareCompanyMatch(
 async function matchTitleToTier(jobTitle: string): Promise<TitleMatch> {
   const normalized = jobTitle.toLowerCase().trim();
 
-  const { data: titles } = await supabase
+  const { data: rawTitles } = await supabase
     .from('titles')
-    .select('title, tier, primary_persona');
+    .select(`
+      title,
+      tier,
+      primary_persona,
+      primary:personas!titles_primary_persona_fkey(persona_title)
+    `);
 
-  if (!titles || titles.length === 0) {
-    return { tier: 'Tier 0 (Unknown)', tier_rank: 0, matched_title: null, primary_persona: null };
+  if (!rawTitles || rawTitles.length === 0) {
+    return { tier: 'Tier 0 (Unknown)', tier_rank: 0, matched_title: null, primary_persona: null, persona_title: null };
   }
+
+  // Flatten the joined persona_title
+  const titles = rawTitles.map((t: any) => ({
+    title: t.title,
+    tier: t.tier,
+    primary_persona: t.primary_persona,
+    persona_title: t.primary?.persona_title || null,
+  }));
 
   // Exact match first
   const exact = titles.find((t: any) => t.title.toLowerCase().trim() === normalized);
   if (exact) {
-    return { tier: exact.tier, tier_rank: tierToRank(exact.tier), matched_title: exact.title, primary_persona: exact.primary_persona };
+    return { tier: exact.tier, tier_rank: tierToRank(exact.tier), matched_title: exact.title, primary_persona: exact.primary_persona, persona_title: exact.persona_title };
   }
 
   // Fuzzy: check if any DB title is contained in the job title or vice versa
-  let bestMatch: { title: string; tier: string; primary_persona: string | null; score: number } | null = null;
+  let bestMatch: { title: string; tier: string; primary_persona: string | null; persona_title: string | null; score: number } | null = null;
   for (const t of titles) {
     const dbTitle = t.title.toLowerCase().trim();
     if (normalized.includes(dbTitle) || dbTitle.includes(normalized)) {
       const score = Math.min(dbTitle.length, normalized.length) / Math.max(dbTitle.length, normalized.length);
       if (!bestMatch || score > bestMatch.score) {
-        bestMatch = { title: t.title, tier: t.tier, primary_persona: t.primary_persona, score };
+        bestMatch = { title: t.title, tier: t.tier, primary_persona: t.primary_persona, persona_title: t.persona_title, score };
       }
     }
   }
 
   if (bestMatch) {
-    return { tier: bestMatch.tier, tier_rank: tierToRank(bestMatch.tier), matched_title: bestMatch.title, primary_persona: bestMatch.primary_persona };
+    return { tier: bestMatch.tier, tier_rank: tierToRank(bestMatch.tier), matched_title: bestMatch.title, primary_persona: bestMatch.primary_persona, persona_title: bestMatch.persona_title };
   }
 
-  return { tier: 'Tier 0 (Unknown)', tier_rank: 0, matched_title: null, primary_persona: null };
+  return { tier: 'Tier 0 (Unknown)', tier_rank: 0, matched_title: null, primary_persona: null, persona_title: null };
 }
 
 interface HubSpotMatch {
@@ -400,22 +414,36 @@ function hasAnyContactData(c: ZoomInfoSearchContact): boolean {
          c.hasMobilePhone === true;
 }
 
-/** Load all titles from DB once for batch matching */
-async function loadTitlesCache(): Promise<Array<{ title: string; tier: string; primary_persona: string | null }>> {
-  const { data } = await supabase.from('titles').select('title, tier, primary_persona');
-  return data || [];
+/** Load all titles from DB once for batch matching - includes persona join */
+async function loadTitlesCache(): Promise<Array<{ title: string; tier: string; primary_persona: string | null; persona_title: string | null }>> {
+  const { data } = await supabase
+    .from('titles')
+    .select(`
+      title,
+      tier,
+      primary_persona,
+      primary:personas!titles_primary_persona_fkey(persona_title)
+    `);
+
+  // Flatten the joined persona_title
+  return (data || []).map((t: any) => ({
+    title: t.title,
+    tier: t.tier,
+    primary_persona: t.primary_persona,
+    persona_title: t.primary?.persona_title || null,
+  }));
 }
 
 function matchTitleFromCache(
   jobTitle: string,
-  titles: Array<{ title: string; tier: string; primary_persona: string | null }>
+  titles: Array<{ title: string; tier: string; primary_persona: string | null; persona_title: string | null }>
 ): TitleMatch {
   const normalized = jobTitle.toLowerCase().trim();
 
   // Try exact match first
   const exact = titles.find((t) => t.title.toLowerCase().trim() === normalized);
   if (exact) {
-    return { tier: exact.tier, tier_rank: tierToRank(exact.tier), matched_title: exact.title, primary_persona: exact.primary_persona };
+    return { tier: exact.tier, tier_rank: tierToRank(exact.tier), matched_title: exact.title, primary_persona: exact.primary_persona, persona_title: exact.persona_title };
   }
 
   // Try with abbreviations expanded (e.g., "CFO"  "Chief Financial Officer")
@@ -423,29 +451,29 @@ function matchTitleFromCache(
   if (expanded !== normalized) {
     const expandedExact = titles.find((t) => t.title.toLowerCase().trim() === expanded);
     if (expandedExact) {
-      return { tier: expandedExact.tier, tier_rank: tierToRank(expandedExact.tier), matched_title: expandedExact.title, primary_persona: expandedExact.primary_persona };
+      return { tier: expandedExact.tier, tier_rank: tierToRank(expandedExact.tier), matched_title: expandedExact.title, primary_persona: expandedExact.primary_persona, persona_title: expandedExact.persona_title };
     }
   }
 
   // Fuzzy containment match on both original and expanded
-  let bestMatch: { title: string; tier: string; primary_persona: string | null; score: number } | null = null;
+  let bestMatch: { title: string; tier: string; primary_persona: string | null; persona_title: string | null; score: number } | null = null;
   for (const t of titles) {
     const dbTitle = t.title.toLowerCase().trim();
     for (const candidate of [normalized, expanded]) {
       if (candidate.includes(dbTitle) || dbTitle.includes(candidate)) {
         const score = Math.min(dbTitle.length, candidate.length) / Math.max(dbTitle.length, candidate.length);
         if (!bestMatch || score > bestMatch.score) {
-          bestMatch = { title: t.title, tier: t.tier, primary_persona: t.primary_persona, score };
+          bestMatch = { title: t.title, tier: t.tier, primary_persona: t.primary_persona, persona_title: t.persona_title, score };
         }
       }
     }
   }
 
   if (bestMatch) {
-    return { tier: bestMatch.tier, tier_rank: tierToRank(bestMatch.tier), matched_title: bestMatch.title, primary_persona: bestMatch.primary_persona };
+    return { tier: bestMatch.tier, tier_rank: tierToRank(bestMatch.tier), matched_title: bestMatch.title, primary_persona: bestMatch.primary_persona, persona_title: bestMatch.persona_title };
   }
 
-  return { tier: 'Tier 0 (Unknown)', tier_rank: 0, matched_title: null, primary_persona: null };
+  return { tier: 'Tier 0 (Unknown)', tier_rank: 0, matched_title: null, primary_persona: null, persona_title: null };
 }
 
 // Persona IDs for keyword-based inference
@@ -460,25 +488,13 @@ const PERSONA_IDS = {
   CORPORATE: 'c0d8459d-9259-48b0-b4dd-ab2da8db76a6',
 };
 
-// Persona ID to frontend label mapping
-const PERSONA_LABELS: Record<string, string> = {
-  [PERSONA_IDS.QUALITY_EHS]: "Champion",              // Quality/Safety → Champion
-  [PERSONA_IDS.IT]: "Technical Evaluator",            // IT → Technical Evaluator
-  [PERSONA_IDS.PRODUCTION]: "Site Lead",              // Production → Site Lead
-  [PERSONA_IDS.SUPPLY_CHAIN]: "Champion",             // Supply Chain → Champion
-  [PERSONA_IDS.ENGINEERING]: "Technical Evaluator",   // Engineering → Technical Evaluator
-  [PERSONA_IDS.PLANT_LEADERSHIP]: "Executive Sponsor", // Plant Leadership → Executive Sponsor
-  [PERSONA_IDS.MAINTENANCE]: "Champion",              // Maintenance → Champion
-  [PERSONA_IDS.CORPORATE]: "Economic Buyer",          // Corporate → Economic Buyer
-};
-
-// Default personas by tier for unknown titles
+// Default persona titles by tier for unknown titles (when no persona in lookup)
 const TIER_DEFAULT_PERSONAS: Record<string, string> = {
-  "Tier 4 (Ultimate)": "Economic Buyer",       // C-suite, Presidents
-  "Tier 3 (Strong Owner)": "Executive Sponsor", // VPs, Directors
-  "Tier 2 (Manager / Recommender)": "Champion", // Managers
-  "Tier 1 (Individual Contributor)": "Technical Evaluator",
-  "Tier 0 (Unknown)": "Technical Evaluator",
+  "Tier 4 (Ultimate)": "Corporate Management",
+  "Tier 3 (Strong Owner)": "Plant Leadership",
+  "Tier 2 (Manager / Recommender)": "Production",
+  "Tier 1 (Individual Contributor)": "Production",
+  "Tier 0 (Unknown)": "Production",
 };
 
 /**
@@ -1171,7 +1187,7 @@ export async function searchAndEnrichContacts(
     for (const sc of searchResults) {
       const tierMatch = sc.jobTitle
         ? matchTitleFromCache(sc.jobTitle, titlesCache)
-        : { tier: 'Tier 0 (Unknown)', tier_rank: 0, matched_title: null, primary_persona: null };
+        : { tier: 'Tier 0 (Unknown)', tier_rank: 0, matched_title: null, primary_persona: null, persona_title: null };
 
       // Check if in HubSpot (with company verification)
       const key = (sc.firstName || '').toLowerCase().trim() + "|" + (sc.lastName || '').toLowerCase().trim();
@@ -1221,6 +1237,7 @@ export async function searchAndEnrichContacts(
         icp_tier_rank: tierMatch.tier_rank,
         icp_matched_title: tierMatch.matched_title,
         lookup_persona: tierMatch.primary_persona, // Persona ID from titles lookup table
+        lookup_persona_title: tierMatch.persona_title, // Persona title from titles lookup (e.g., "Quality & EHS")
         in_hubspot: inHubSpot,
         hs_contact_id: hsContactId,
         match_confidence: matchConfidence,
@@ -1293,11 +1310,10 @@ export async function searchAndEnrichContacts(
   // Populate buying committee fields (persona, status, reasoning, strategy, priority)
   console.log("    Populating buying committee fields for " + enrichedContacts.length + " contacts...");
   for (const contact of enrichedContacts as any[]) {
-    // Get persona ID - prefer lookup from titles table, fall back to keyword inference
+    // Get persona ID and title - prefer lookup from titles table
     const persona_id = contact.lookup_persona || inferPersonaFromTitle(contact.job_title || '');
-    const persona_label = persona_id
-      ? (PERSONA_LABELS[persona_id] || TIER_DEFAULT_PERSONAS[contact.icp_tier || 'Tier 0 (Unknown)'])
-      : TIER_DEFAULT_PERSONAS[contact.icp_tier || 'Tier 0 (Unknown)'];
+    // Use the persona_title from the lookup table, fall back to tier-based default
+    const persona_label = contact.lookup_persona_title || TIER_DEFAULT_PERSONAS[contact.icp_tier || 'Tier 0 (Unknown)'];
 
     // Determine status
     const status = determineContactStatus(
