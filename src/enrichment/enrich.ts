@@ -5,6 +5,8 @@ import { parseRevenueAmountToUsd, parseEmployeeBandLowerBound, countryNameToCode
 import { detectOutliers, shouldTriggerDeepResearch, runDeepResearch, DeepResearchResult } from './deepResearch.js';
 import { getCompanyByDomain } from '../lib/supabase.js';
 import { SSEEmitter } from '../lib/sseEmitter.js';
+import { gateway } from '@ai-sdk/gateway';
+import { generateText } from 'ai';
 
 // Import from components
 import { calculateAICost } from './components/pricing.js';
@@ -209,10 +211,43 @@ export async function enrichDomainWithCost(
     if (process.env.GEMINI_API_KEY) {
       try {
         console.log(`   🔎 Using Gemini search: "${linkedinSearchQuery}"`);
-        // TODO: Implement Gemini search when available
-        // linkedinSearchResults = await geminiSearch(linkedinSearchQuery);
+        const geminiModel = gateway('google/gemini-2.0-flash-exp', {
+          apiKey: process.env.GEMINI_API_KEY
+        });
+
+        const { text } = await generateText({
+          model: geminiModel,
+          prompt: `Search the web and find the official LinkedIn company page URL for "${pass1Result.company_name}".
+
+Return ONLY a JSON object with this structure:
+{
+  "linkedin_url": "https://linkedin.com/company/...",
+  "confidence": "high" or "medium" or "low"
+}
+
+If no LinkedIn page found, return:
+{
+  "linkedin_url": null,
+  "confidence": "none"
+}`,
+          temperature: 0
+        });
+
+        // Parse Gemini response
+        const cleanText = text.trim().replace(/^```json?\n?/i, '').replace(/\n?```$/i, '');
+        const geminiResult = JSON.parse(cleanText);
+
+        if (geminiResult.linkedin_url && geminiResult.linkedin_url.includes('linkedin.com/company/')) {
+          linkedinSearchResults = [{
+            url: geminiResult.linkedin_url,
+            confidence: geminiResult.confidence || 'medium'
+          }];
+          console.log(`   ✅ Gemini found LinkedIn: ${geminiResult.linkedin_url} (${geminiResult.confidence} confidence)`);
+        } else {
+          console.log(`   ⚠️  Gemini did not find LinkedIn page`);
+        }
       } catch (error) {
-        console.log(`   ⚠️  Gemini search failed, falling back to Firecrawl`);
+        console.log(`   ⚠️  Gemini search failed: ${error}, falling back to Firecrawl`);
       }
     }
 
