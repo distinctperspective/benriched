@@ -553,26 +553,28 @@ If no LinkedIn page found, return:
     const originalRevenueFound = pass1Result.revenue_found;
     const originalEmployeeFound = pass1Result.employee_count_found;
     const originalHeadquarters = pass1Result.headquarters;
-    
+    const originalLinkedInCandidates = pass1Result.linkedin_url_candidates;
+
     const strictResult = await pass1_identifyUrlsStrict(domain, searchModel, pass1Result.company_name);
     console.log(`   📝 Company (strict): ${strictResult.company_name}`);
     console.log(`   🔗 URLs (strict): ${strictResult.urls_to_crawl.join(', ')}`);
-    
+
     // Merge: combine revenue evidence from both passes (original often has better data)
     // Concatenate both arrays so pickRevenueBandFromEvidence can choose the best
     const combinedRevenue = [
       ...(originalRevenueFound || []),
       ...(strictResult.revenue_found || [])
     ].filter(r => r && r.amount);
-    
+
     // Prefer strict headquarters only if it has actual city data, otherwise keep original
     const strictHasHQ = strictResult.headquarters?.city && strictResult.headquarters.city !== 'unknown';
-    
+
     pass1Result = {
       ...strictResult,
       revenue_found: combinedRevenue.length > 0 ? combinedRevenue : originalRevenueFound,
       employee_count_found: strictResult.employee_count_found || originalEmployeeFound,
       headquarters: strictHasHQ ? strictResult.headquarters : originalHeadquarters,
+      linkedin_url_candidates: originalLinkedInCandidates || strictResult.linkedin_url_candidates,
     };
     
     console.log(`\n🔥 Re-scraping ${pass1Result.urls_to_crawl.length} URLs with Firecrawl...`);
