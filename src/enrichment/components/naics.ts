@@ -299,8 +299,8 @@ export async function selectNAICSCodes(
     // Codes that require specific keywords in business description to be valid
     // This prevents AI from incorrectly assigning codes based on target markets vs actual business
     const RESTRICTED_CODES: Record<string, string[]> = {
-      '311111': ['pet food', 'dog food', 'cat food', 'pet treats', 'animal feed', 'pet nutrition'],
-      '311119': ['pet food', 'dog food', 'cat food', 'pet treats', 'animal feed', 'pet nutrition'],
+      '311111': ['pet food', 'dog food', 'cat food', 'pet treats', 'animal feed', 'pet nutrition', 'pet care', 'pet consumers', 'pet brands', 'pet products', 'pet manufacturing'],
+      '311119': ['pet food', 'dog food', 'cat food', 'pet treats', 'animal feed', 'pet nutrition', 'pet care', 'pet consumers', 'pet brands', 'pet products', 'pet manufacturing'],
     };
 
     const descLower = businessDescription.toLowerCase();
