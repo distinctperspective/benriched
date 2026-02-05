@@ -550,7 +550,16 @@ export async function enrichDomainWithCost(
   });
 
   const pass2StartTime = Date.now();
-  const { result: pass2Result, usage: pass2Usage, rawResponse: pass2RawResponse } = await pass2_analyzeContentWithUsage(domain, pass1Result.company_name, scrapedContent, analysisModel, pass1Result, analysisModelId);
+  // Pass the original input domain for tracking domain changes
+  const { result: pass2Result, usage: pass2Usage, rawResponse: pass2RawResponse } = await pass2_analyzeContentWithUsage(
+    enrichmentDomain,
+    pass1Result.company_name,
+    scrapedContent,
+    analysisModel,
+    pass1Result,
+    analysisModelId,
+    domain // Pass original input domain for verification tracking
+  );
   const pass2Ms = Date.now() - pass2StartTime;
   let result = pass2Result;
 
@@ -579,6 +588,18 @@ export async function enrichDomainWithCost(
       employees_found: deepResearchResult?.employees?.count || null,
       location_found: deepResearchResult?.location ? `${deepResearchResult.location.city}, ${deepResearchResult.location.country}` : null
     };
+
+    // Update domain verification to include domain resolver contribution
+    if (result.diagnostics.domain_verification) {
+      // If domain was changed by resolver, update verification source
+      if (domainResolution.domain_changed) {
+        result.diagnostics.domain_verification = {
+          ...result.diagnostics.domain_verification,
+          verification_source: 'domain_resolver',
+          reasoning: `Domain resolver: ${domainResolution.resolution_method}. Then: ${result.diagnostics.domain_verification.reasoning}`
+        };
+      }
+    }
   }
   
   // ALWAYS use our scraped/Pass 1 LinkedIn URL if we found one (more reliable than Pass 2)

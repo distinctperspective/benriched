@@ -74,6 +74,17 @@ export async function pass1_identifyUrlsWithUsage(domain: string, model: any, mo
           },
           required: ["url", "confidence"]
         }
+      },
+      canonical_website: {
+        type: "object",
+        properties: {
+          url: { type: "string" },
+          confidence: {
+            type: "string",
+            enum: ["high", "medium", "low"]
+          },
+          reasoning: { type: "string" }
+        }
       }
     },
     required: ["company_name", "urls_to_crawl"]
@@ -140,6 +151,25 @@ LinkedIn is OPTIONAL and NON-BLOCKING. If you find LinkedIn URLs:
 - Do NOT require exact verification
 - Include top 2-3 candidates if multiple exist
 
+#CANONICAL WEBSITE (REQUIRED)#
+
+**CRITICAL**: You MUST actively search for and verify the company's official website. DO NOT assume the input domain is correct.
+
+Search for the company's primary/official website URL:
+- Use web search to find the ACTUAL company website mentioned in reliable sources
+- Check: ZoomInfo, LinkedIn company pages, Crunchbase, company press releases, SEC filings
+- The input domain may be WRONG - verify it against what you find in search results
+- This should be the main company website, not social media or third-party sites
+- Exclude: LinkedIn, Wikipedia, news sites (but USE these to find the official website link)
+- Return the full URL (including https://)
+- Confidence levels:
+  - "high": Found in multiple sources (ZoomInfo, Crunchbase, LinkedIn) OR in official sources (SEC filings, press releases)
+  - "medium": Found in search results but limited confirmation
+  - "low": Cannot find reliable confirmation - must guess or use input domain
+- Reasoning: Explain HOW you found this website (e.g., "Found in ZoomInfo and LinkedIn profile", "Listed in Crunchbase as official website")
+
+**DO NOT say**: "Provided domain in query" - you must SEARCH for the website, not assume the input is correct!
+
 #OUTPUT FORMAT#
 
 Return ONLY valid JSON (no explanatory text):
@@ -171,10 +201,15 @@ Return ONLY valid JSON (no explanatory text):
   },
   "linkedin_url_candidates": [
     {"url": "https://linkedin.com/company/slug", "confidence": "high"}
-  ]
+  ],
+  "canonical_website": {
+    "url": "https://company.com",
+    "confidence": "high",
+    "reasoning": "Found in SEC filings and confirmed across multiple sources"
+  }
 }
 
-**CRITICAL**: Return valid JSON only. Include ALL revenue sources found (especially estimates). Label scope for each data point.`,
+**CRITICAL**: Return valid JSON only. Include ALL revenue sources found (especially estimates). Label scope for each data point. ALWAYS include canonical_website.`,
     temperature: 0.1,
   });
   

@@ -13,24 +13,26 @@ export interface Pass2WithUsage {
 }
 
 export async function pass2_analyzeContent(
-  domain: string, 
+  domain: string,
   companyName: string,
-  scrapedContent: Map<string, string>, 
+  scrapedContent: Map<string, string>,
   model: any,
   pass1Data?: Pass1Result,
-  modelId: string = 'openai/gpt-4o-mini'
+  modelId: string = 'openai/gpt-4o-mini',
+  inputDomain?: string
 ): Promise<EnrichmentResult> {
-  const { result } = await pass2_analyzeContentWithUsage(domain, companyName, scrapedContent, model, pass1Data, modelId);
+  const { result } = await pass2_analyzeContentWithUsage(domain, companyName, scrapedContent, model, pass1Data, modelId, inputDomain);
   return result;
 }
 
 export async function pass2_analyzeContentWithUsage(
-  domain: string, 
+  domain: string,
   companyName: string,
-  scrapedContent: Map<string, string>, 
+  scrapedContent: Map<string, string>,
   model: any,
   pass1Data?: Pass1Result,
-  modelId: string = 'openai/gpt-4o-mini'
+  modelId: string = 'openai/gpt-4o-mini',
+  inputDomain?: string
 ): Promise<Pass2WithUsage> {
   console.log(`\n🔬 Pass 2: Analyzing scraped content...`);
   
@@ -286,15 +288,60 @@ export async function pass2_analyzeContentWithUsage(
       else if (revenueIndex >= 7) finalSize = '201-500 Employees'; // 200M-1B
     }
     
+    // Determine final website and domain using Pass 1 canonical website if available
+    let finalWebsite: string;
+    let finalDomain: string;
+    let domainVerification = null;
+
+    const pass1Canonical = pass1Data?.canonical_website;
+    if (pass1Canonical && pass1Canonical.confidence !== 'low') {
+      // Use Pass 1 discovered canonical website
+      finalWebsite = pass1Canonical.url;
+      // Extract domain from URL
+      finalDomain = pass1Canonical.url
+        .replace(/^https?:\/\//, '')
+        .replace(/^www\./, '')
+        .replace(/\/.*$/, '');
+
+      // Track domain verification in diagnostics
+      domainVerification = {
+        input_domain: inputDomain || domain,
+        final_domain: finalDomain,
+        domain_changed: finalDomain !== (inputDomain || domain),
+        verification_source: 'pass1_canonical' as const,
+        confidence: pass1Canonical.confidence,
+        reasoning: pass1Canonical.reasoning
+      };
+
+      if (finalDomain !== domain) {
+        console.log(`   🔄 Domain corrected: ${domain} → ${finalDomain} (confidence: ${pass1Canonical.confidence})`);
+        console.log(`   📝 Reasoning: ${pass1Canonical.reasoning}`);
+      }
+    } else {
+      // Fallback to input domain
+      finalWebsite = `https://${domain}`;
+      finalDomain = domain;
+
+      domainVerification = {
+        input_domain: inputDomain || domain,
+        final_domain: finalDomain,
+        domain_changed: false,
+        verification_source: 'input' as const,
+        confidence: null,
+        reasoning: pass1Canonical ? `Low confidence canonical website (${pass1Canonical.reasoning}) - using input domain` : 'No canonical website found - using input domain'
+      };
+    }
+
     const diagnostics: DiagnosticInfo = {
       revenue_sources_found: Array.isArray(pass1Data?.revenue_found) ? pass1Data.revenue_found : [],
       employee_sources_found: pass1Data?.employee_count_found || null,
+      domain_verification: domainVerification
     };
 
     const result: EnrichmentResult = {
       company_name: companyName,
-      website: `https://${domain}`,
-      domain: domain,
+      website: finalWebsite,
+      domain: finalDomain,
       linkedin_url: parsed.linkedin_url || null,
       business_description: parsed.business_description || 'unknown',
       company_size: finalSize,
@@ -358,11 +405,27 @@ export async function pass2_analyzeContentWithUsage(
     
     return { result, usage: aiUsage, rawResponse: text };
   } catch {
+    // Fallback: use Pass 1 canonical website if available, otherwise use input domain
+    let finalWebsite: string;
+    let finalDomain: string;
+    const pass1Canonical = pass1Data?.canonical_website;
+
+    if (pass1Canonical && pass1Canonical.confidence !== 'low') {
+      finalWebsite = pass1Canonical.url;
+      finalDomain = pass1Canonical.url
+        .replace(/^https?:\/\//, '')
+        .replace(/^www\./, '')
+        .replace(/\/.*$/, '');
+    } else {
+      finalWebsite = `https://${domain}`;
+      finalDomain = domain;
+    }
+
     return {
       result: {
         company_name: companyName,
-        website: `https://${domain}`,
-        domain: domain,
+        website: finalWebsite,
+        domain: finalDomain,
         linkedin_url: null,
         business_description: 'unknown',
         company_size: 'unknown',

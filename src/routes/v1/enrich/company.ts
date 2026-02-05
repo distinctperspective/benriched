@@ -91,7 +91,7 @@ export async function handleCompanyEnrichment(c: Context<AppEnv>) {
 
     // Save company to database
     const companyRecord: CompanyRecord = {
-      domain: normalizedDomain,
+      domain: result.domain, // Use corrected domain from enrichment, not input
       company_name: result.company_name,
       website: result.website,
       linkedin_url: result.linkedin_url,
@@ -133,7 +133,7 @@ export async function handleCompanyEnrichment(c: Context<AppEnv>) {
       const effectiveHsCompanyId = hs_company_id || `api_${crypto.randomUUID()}`;
       const requestRecord: EnrichmentRequestRecord = {
         hs_company_id: effectiveHsCompanyId,
-        domain: normalizedDomain,
+        domain: result.domain, // Use corrected domain from enrichment
         company_id: savedCompany.id,
         user_id: c.get('userId') || null,
         request_source: hs_company_id ? 'hubspot' : 'api',

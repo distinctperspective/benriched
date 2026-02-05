@@ -46,6 +46,11 @@ export interface Pass1Result {
   revenue_found?: RevenueEvidence[] | null;
   employee_count_found?: EmployeeEvidence | null;
   linkedin_url_candidates?: Array<{url: string; confidence: 'high' | 'medium' | 'low'}>;
+  canonical_website?: {
+    url: string;
+    confidence: 'high' | 'medium' | 'low';
+    reasoning: string;
+  };
 }
 
 export interface NAICSCode {
@@ -103,6 +108,14 @@ export interface DiagnosticInfo {
     location_found?: string | null;
   };
   field_sources?: FieldSources;
+  domain_verification?: {
+    input_domain: string;
+    final_domain: string;
+    domain_changed: boolean;
+    verification_source: 'pass1_canonical' | 'domain_resolver' | 'input';
+    confidence: 'high' | 'medium' | 'low' | null;
+    reasoning: string | null;
+  };
 }
 
 export interface EnrichmentResult {
