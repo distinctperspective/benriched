@@ -35,47 +35,167 @@ async function loadApprovedNaicsCodes(): Promise<void> {
 }
 
 /**
- * Simple pass-through - return all NAICS codes for AI model to match
- * The AI model is better at matching than keyword scoring
+ * Filter NAICS codes using major category matching
+ * Returns all codes in relevant NAICS categories based on business description
  */
 function retrieveCandidateNAICS(
   businessDescription: string,
   scrapedContent: Map<string, string>,
-  maxCandidates: number = 1500
+  maxCandidates: number = 300
 ): Array<{ code: string; description: string; score: number }> {
-  
-  console.log(`   🔍 Passing all ${approvedNaicsCodes.length} NAICS codes to AI model for matching`);
-  return approvedNaicsCodes.map(naics => ({ ...naics, score: 1 }));
+
+  const descLower = businessDescription.toLowerCase();
+
+  // Map keywords to NAICS major categories (2-digit prefixes)
+  const categoryMap: Record<string, { prefixes: string[]; keywords: string[] }> = {
+    'food_manufacturing': {
+      prefixes: ['311'], // Food Manufacturing
+      keywords: ['food', 'beverage', 'snack', 'sauce', 'dairy', 'meat', 'beef', 'pork', 'chicken', 'bakery', 'bread', 'cake', 'pastry', 'cheese', 'milk', 'chocolate', 'candy', 'confection', 'canned', 'frozen']
+    },
+    'textile': {
+      prefixes: ['313', '314', '315', '316'], // Textile, Apparel, Leather
+      keywords: ['textile', 'fabric', 'cloth', 'apparel', 'clothing', 'garment', 'leather']
+    },
+    'paper': {
+      prefixes: ['322'], // Paper Manufacturing
+      keywords: ['paper', 'cardboard', 'corrugated', 'pulp', 'paperboard']
+    },
+    'chemical': {
+      prefixes: ['325'], // Chemical Manufacturing
+      keywords: ['chemical', 'pharmaceutical', 'medicine', 'drug', 'soap', 'detergent', 'cosmetic', 'toiletries']
+    },
+    'plastics': {
+      prefixes: ['326'], // Plastics & Rubber
+      keywords: ['plastic', 'polymer', 'foam', 'polystyrene', 'rubber']
+    },
+    'machinery': {
+      prefixes: ['333'], // Machinery Manufacturing
+      keywords: ['machinery', 'machine', 'equipment', 'industrial equipment']
+    },
+    'electronics': {
+      prefixes: ['334', '335'], // Electronics, Electrical Equipment
+      keywords: ['electronic', 'semiconductor', 'circuit', 'computer', 'electrical', 'appliance']
+    },
+    'retail': {
+      prefixes: ['44', '45'], // Retail Trade
+      // Only match if company OPERATES stores, not if they just sell to retail
+      keywords: ['operates stores', 'operates convenience', 'retail chain', 'store operator', 'supermarket chain', 'grocery chain', 'convenience store chain', 'runs stores', 'retail operator', 'store owner', 'convenience retailer']
+    },
+    'wholesale': {
+      prefixes: ['42'], // Wholesale Trade
+      keywords: ['wholesal', 'distributor', 'distribut', 'supply chain', 'marketer and distributor']
+    },
+    'restaurant': {
+      prefixes: ['722'], // Food Services
+      // Only match if company OPERATES food service, not if they just serve food service markets
+      keywords: ['operates restaurants', 'operates fast-food', 'fast-food restaurant', 'fast food restaurant', 'restaurant chain', 'cafe chain', 'coffee shop chain', 'catering company', 'food service provider', 'runs restaurants', 'restaurant operator', 'quick service restaurant', 'qsr']
+    },
+    'agriculture': {
+      prefixes: ['111', '112'], // Agriculture, Ranching
+      keywords: ['farm', 'farming', 'agriculture', 'crop', 'cattle', 'livestock', 'ranch', 'grow']
+    },
+    'construction': {
+      prefixes: ['236', '237', '238'], // Construction
+      keywords: ['construction', 'contractor', 'builder', 'plumbing', 'electrical contractor', 'hvac']
+    },
+    'auto_repair': {
+      prefixes: ['811'], // Repair & Maintenance
+      keywords: ['auto repair', 'collision', 'automotive repair', 'mechanic', 'body shop']
+    }
+  };
+
+  // Detect which categories match the business description
+  const matchedPrefixes: Set<string> = new Set();
+  const matchedCategories: string[] = [];
+
+  for (const [category, { prefixes, keywords }] of Object.entries(categoryMap)) {
+    if (keywords.some(kw => descLower.includes(kw))) {
+      prefixes.forEach(p => matchedPrefixes.add(p));
+      matchedCategories.push(category);
+    }
+  }
+
+  // If no categories matched, return all codes (fallback)
+  if (matchedPrefixes.size === 0) {
+    console.log(`   🔍 No industry categories detected, passing all ${approvedNaicsCodes.length} NAICS codes`);
+    return approvedNaicsCodes.map(naics => ({ ...naics, score: 1 }));
+  }
+
+  console.log(`   🔍 Detected categories: ${matchedCategories.join(', ')}`);
+  console.log(`   📋 Matching NAICS prefixes: ${Array.from(matchedPrefixes).join(', ')}`);
+
+  // Filter codes that start with matched prefixes
+  const filtered = approvedNaicsCodes
+    .filter(naics => {
+      return Array.from(matchedPrefixes).some(prefix => naics.code.startsWith(prefix));
+    })
+    .map(naics => ({ ...naics, score: 1 }));
+
+  console.log(`   📝 Filtered from ${approvedNaicsCodes.length} to ${filtered.length} candidate NAICS codes`);
+
+  return filtered.slice(0, maxCandidates);
 }
 
 const NAICS_SELECTION_PROMPT = `You are assigning accurate 2022 NAICS codes to a company.
 
 **TASK**: Read the business description below and match it to the most accurate NAICS code descriptions from the approved list.
 
-**CRITICAL**: Match ONLY based on the BUSINESS DESCRIPTION - ignore any other content. The business description tells you what the company actually does.
-
-**RULES**:
+**CRITICAL RULES**:
 1. Use ONLY codes from the APPROVED NAICS LIST below - return the exact code and description as listed
-2. Match based on what the company ACTUALLY DOES (from business description)
-3. Return MAXIMUM 6 codes for the PRIMARY business activities mentioned in the business description
+2. Focus ONLY on what the company PRODUCES or DOES - ignore mentions of customers/markets/who they sell to
+3. Return MAXIMUM 3-6 codes for the PRIMARY business activities only
 4. Return JSON array only: [{ "code": "string", "description": "string" }]
 
-**MATCHING GUIDELINES**:
-- If business description says "manufacturer" or "producer" → use 31xxxx manufacturing codes, NOT retail codes
-- If business description says "retailer" or "store" → use 44xxxx or 45xxxx retail codes
-- If business description says "wholesaler" or "distributor" → use 42xxxx wholesale codes
-- If business description says "operates restaurants" or "provides food service" → use 722xxx food service codes
+**IGNORE CUSTOMER/MARKET MENTIONS**:
+The business description may mention target markets like "serves restaurants" or "targets retail" - **IGNORE THESE**.
+Only classify based on what the company MAKES or DOES, not who they sell to.
 
-**IMPORTANT - Target Markets vs Business Type**:
-- "Targets retail markets" or "sells to retailers" = manufacturer/wholesaler (31xxxx or 42xxxx), NOT retailer (44xxxx)
-- "Targets food service markets" or "sells to restaurants" = manufacturer/wholesaler (31xxxx or 42xxxx), NOT restaurant (722xxx)
-- Only use retail/restaurant codes if the company OPERATES stores/restaurants themselves
+Examples of text to IGNORE:
+- ❌ "serves food service markets" (this is who they sell to)
+- ❌ "targets restaurants, convenience stores" (these are customers)
+- ❌ "used in retail and grocery sectors" (these are distribution channels)
+
+**BUSINESS TYPE IDENTIFICATION** (PRIORITY ORDER - check from top to bottom):
+
+1. **FIRST: Check if they OPERATE stores/restaurants** (highest priority)
+   - "operates stores", "operates convenience stores", "retail chain" → Use 44-45xxxx retail codes
+   - "operates restaurants", "fast-food chain", "restaurant operator" → Use 722xxx food service codes
+   - If they OPERATE retail/restaurants, IGNORE any food/product keywords (they SELL products, don't MAKE them)
+
+2. **THEN: Check if they're a manufacturer** (only if NOT operating stores/restaurants)
+   - "manufactures", "produces", "factory", "production facility" → Use 31-33xxxx manufacturing codes
+   - NEVER use retail/wholesale codes for manufacturers
+
+3. **THEN: Check if they're a wholesaler** (only if NOT manufacturing or retailing)
+   - "distributes", "wholesaler", "supply chain" → Use 42xxxx wholesale codes
+   - NEVER use manufacturing codes for wholesalers
+
+**KEY RULE**: If description says "operates stores" OR "operates restaurants", they are RETAIL/FOOD SERVICE even if they mention food/products. They SELL, not MAKE.
+
+**PRODUCT/MATERIAL IDENTIFICATION** (for manufacturers):
+- "packaging", "containers", "bowls", "cups" → 326xxx (plastics), 322xxx (paper containers)
+- "food products", "sauces", "beverages" → 311xxx (food manufacturing)
+- "machinery", "equipment" → 333xxx (machinery manufacturing)
+- "electronics", "semiconductors" → 334xxx (electronics manufacturing)
 
 **EXAMPLES**:
-- "Producer of olive oils and sauces" → 311225 (Fats and Oils), 311999 (Food Manufacturing)
-- "Coffee shop chain" → 722515 (Snack and Nonalcoholic Beverage Bars)
-- "Catering company" → 722320 (Caterers)
-- "Grocery store" → 445110 (Supermarkets)
+✅ CORRECT:
+- "Manufacturer of food packaging products. Serves food service, restaurants, retail."
+  → 326199 (Plastics Packaging), 322215 (Food Containers)
+  → Reasoning: Company MAKES packaging. Ignore "food service, restaurants, retail" (those are customers)
+
+- "Operates convenience stores selling fuel, snacks, and beverages."
+  → 445131 (Convenience Retailers), 447110 (Gasoline Stations with Convenience Stores)
+  → Reasoning: Company OPERATES STORES. They SELL products (snacks/beverages), don't MAKE them. Use retail codes.
+
+- "Operates fast-food restaurants specializing in burgers and fries."
+  → 722513 (Limited-Service Restaurants)
+  → Reasoning: Company OPERATES RESTAURANTS. Use food service codes, not food manufacturing.
+
+❌ INCORRECT:
+- "Operates convenience stores selling snacks and beverages."
+  → ❌ 311919 (Snack Food Manufacturing), 312111 (Beverage Manufacturing) - WRONG! They don't MAKE food
+  → ✅ 445131 (Convenience Retailers) - CORRECT! They OPERATE STORES
 
 #APPROVED NAICS LIST#
 {{APPROVED_NAICS_LIST}}
@@ -85,7 +205,8 @@ Domain: {{DOMAIN}}
 Company Name: {{COMPANY_NAME}}
 Business Description: {{BUSINESS_DESCRIPTION}}
 
-Return ONLY valid JSON array of NAICS codes based on the business description.`;
+**YOUR TASK**: Extract what the company PRODUCES/DOES (ignore customers/markets), then match to NAICS codes.
+Return ONLY valid JSON array.`;
 
 export interface NAICSSelectionResult {
   naicsCodes: NAICSCode[];
@@ -106,10 +227,10 @@ export async function selectNAICSCodes(
   
   // Load approved NAICS codes
   await loadApprovedNaicsCodes();
-  
-  // RETRIEVAL STEP: Get top 50 candidate NAICS codes based on keywords
-  // This reduces token usage by ~90% compared to injecting all 1,013 codes
-  const candidates = retrieveCandidateNAICS(businessDescription, scrapedContent, 50);
+
+  // RETRIEVAL STEP: Get top candidate NAICS codes based on keywords
+  // This reduces token usage by filtering from ~1000 codes to ~100-200 relevant codes
+  const candidates = retrieveCandidateNAICS(businessDescription, scrapedContent, 200);
   
   if (candidates.length === 0) {
     console.log(`   ⚠️  No candidate NAICS codes found - using fallback`);
@@ -121,12 +242,12 @@ export async function selectNAICSCodes(
     };
   }
   
-  // Format candidate NAICS list for prompt (only top 50 instead of all 1,013)
+  // Format candidate NAICS list for prompt
   const approvedListText = candidates
     .map(c => `${c.code} - ${c.description}`)
     .join('\n');
-  
-  console.log(`   📝 Prompt will include ${candidates.length} candidate codes (saved ~${Math.round((1 - candidates.length / approvedNaicsCodes.length) * 100)}% tokens)`);
+
+  console.log(`   📝 Sending ${candidates.length} filtered candidate codes to AI (reduced from ${approvedNaicsCodes.length} total)`);
   
   // Build prompt (using only business description, not scraped content)
   // Scraped content can include recipes, ingredients, etc. that confuse the AI
@@ -148,9 +269,10 @@ export async function selectNAICSCodes(
     const costUsd = calculateAICost(modelId, inputTokens, outputTokens);
     
     console.log(`   🔢 NAICS selection tokens: ${inputTokens} in / ${outputTokens} out ($${costUsd.toFixed(4)})`);
-    
+
     // Parse response
     const cleanText = text.trim().replace(/^```json?\n?/i, '').replace(/\n?```$/i, '');
+    console.log(`   🤖 AI returned: ${cleanText.substring(0, 200)}`); // Debug: show what AI returned
     const parsed = JSON.parse(cleanText);
     
     if (!Array.isArray(parsed)) {
@@ -167,7 +289,7 @@ export async function selectNAICSCodes(
     const validatedCodes: NAICSCode[] = [];
 
     // Codes that require specific keywords in business description to be valid
-    // This prevents AI from incorrectly assigning pet food codes to human food companies, etc.
+    // This prevents AI from incorrectly assigning codes based on target markets vs actual business
     const RESTRICTED_CODES: Record<string, string[]> = {
       '311111': ['pet food', 'dog food', 'cat food', 'pet treats', 'animal feed', 'pet nutrition'],
       '311119': ['pet food', 'dog food', 'cat food', 'pet treats', 'animal feed', 'pet nutrition'],
@@ -175,10 +297,69 @@ export async function selectNAICSCodes(
 
     const descLower = businessDescription.toLowerCase();
 
+    // BLOCKING RULES: Prevent common category mismatches based on business type indicators
+    // Use context-aware patterns to avoid false positives (e.g., "serves retail" vs "operates retail stores")
+    const BLOCKING_RULES: Array<{
+      pattern: RegExp;
+      antiPattern?: RegExp; // If this matches, DON'T block
+      blockedPrefixes: string[];
+      reason: string
+    }> = [
+      {
+        // If description says "manufacturer" or "producer", block wholesaler codes
+        // But NOT if they also say "distributor" (some companies do both)
+        pattern: /\b(manufactur|producer|production|factory|plant)\b/i,
+        antiPattern: /\b(distribut|wholesal)\b/i,
+        blockedPrefixes: ['42'], // All wholesale trade (42xxxx)
+        reason: 'company is a manufacturer, not a wholesaler'
+      },
+      {
+        // If description says "packaging" or "container", block food manufacturing codes
+        pattern: /\b(packaging|container|box|bag|wrapper|bottle)\b/i,
+        blockedPrefixes: ['3119'], // Food manufacturing (311xxx)
+        reason: 'company makes packaging, not food products'
+      },
+      {
+        // If description says "wholesaler" or "distributor" (NOT "distribution"),  block manufacturing codes
+        // But NOT if they also say "manufacturer" (some companies do both)
+        pattern: /\b(wholesal|distribut(?!ion))\b/i,
+        antiPattern: /\b(manufactur|producer|production|factory)\b/i,
+        blockedPrefixes: ['31', '32', '33'], // All manufacturing (31-33xxxx)
+        reason: 'company is a wholesaler/distributor, not a manufacturer'
+      },
+      {
+        // ONLY block if company OPERATES retail stores, not if they just SELL TO retail
+        // Look for: "operates stores", "retail chain", "store operator", "runs stores"
+        // NOT: "serves retail", "targets retail", "retail markets", "retail customers"
+        pattern: /\b(operates? stores?|retail chain|store operator|runs? stores?|operates? retail|retail operator)\b/i,
+        blockedPrefixes: ['31', '32', '33', '42'], // Manufacturing and wholesale
+        reason: 'company is a retailer, not a manufacturer/wholesaler'
+      }
+    ];
+
     for (const item of parsed) {
       const approved = approvedNaicsCodes.find(n => n.code === item.code);
       if (approved) {
-        // Check if this is a restricted code
+        // Check blocking rules first
+        let blocked = false;
+        for (const rule of BLOCKING_RULES) {
+          // Check if pattern matches
+          if (rule.pattern.test(businessDescription)) {
+            // If antiPattern exists and matches, skip this blocking rule
+            if (rule.antiPattern && rule.antiPattern.test(businessDescription)) {
+              continue; // Don't block - company does both activities
+            }
+            // Apply blocking rule
+            if (rule.blockedPrefixes.some(prefix => item.code.startsWith(prefix))) {
+              console.log(`   🚫 NAICS code ${item.code} (${approved.description}) blocked - ${rule.reason}`);
+              blocked = true;
+              break;
+            }
+          }
+        }
+        if (blocked) continue;
+
+        // Check if this is a restricted code (requires specific keywords)
         const requiredKeywords = RESTRICTED_CODES[item.code];
         if (requiredKeywords) {
           const hasKeyword = requiredKeywords.some(kw => descLower.includes(kw));
