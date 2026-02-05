@@ -151,15 +151,33 @@ export async function resolveDomainToWebsite(
     }
 
     // Check for fuzzy match (submitted domain is similar to discovered domain)
-    // Example: willamettehazelnuts.com vs whazelnut.com
+    // Example: britt.com → cafebritt.com (user typed shortened version)
+    // If we find a match, use the discovered domain (the more complete one)
     const submittedCore = submittedDomainNormalized.split('.')[0].toLowerCase();
     for (const discoveredDomain of validDomains) {
       const discoveredCore = discoveredDomain.split('.')[0].toLowerCase();
-      // If discovered domain is a substring of submitted, or vice versa (with 50%+ overlap)
-      if (submittedCore.includes(discoveredCore) || discoveredCore.includes(submittedCore)) {
-        const overlapRatio = Math.min(submittedCore.length, discoveredCore.length) / Math.max(submittedCore.length, discoveredCore.length);
+      // If discovered domain contains submitted (e.g., "cafebritt" contains "britt")
+      // then the discovered domain is likely the full/correct version
+      if (discoveredCore.includes(submittedCore) && submittedCore.length >= 4) {
+        const overlapRatio = submittedCore.length / discoveredCore.length;
         if (overlapRatio >= 0.5) {
-          console.log(`   🔄 Fuzzy match found: ${submittedDomainNormalized} ≈ ${discoveredDomain} - using original`);
+          console.log(`   🔄 Fuzzy match found: ${submittedDomainNormalized} → ${discoveredDomain} - using discovered`);
+          return {
+            submitted_domain: domain,
+            resolved_domain: discoveredDomain,
+            domain_changed: true,
+            resolution_method: 'search',
+            search_results: searchResults,
+            credits_used: 1
+          };
+        }
+      }
+      // If submitted contains discovered (e.g., "willamettehazelnuts" contains "whazelnut")
+      // then submitted is likely more complete, keep original
+      if (submittedCore.includes(discoveredCore)) {
+        const overlapRatio = discoveredCore.length / submittedCore.length;
+        if (overlapRatio >= 0.5) {
+          console.log(`   🔄 Fuzzy match found: ${submittedDomainNormalized} ≈ ${discoveredDomain} - keeping submitted (more complete)`);
           return {
             submitted_domain: domain,
             resolved_domain: domain,
