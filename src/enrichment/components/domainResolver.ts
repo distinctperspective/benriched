@@ -100,16 +100,22 @@ export async function resolveDomainToWebsite(
       'linkedin.com',
       'facebook.com',
       'twitter.com',
+      'x.com',
       'instagram.com',
       'youtube.com',
       'pinterest.com',
       'tiktok.com',
       'reddit.com',
+      'threads.net',
       // News/media
       'wikipedia.org',
       'bloomberg.com',
       'reuters.com',
       'forbes.com',
+      'wsj.com',
+      'nytimes.com',
+      'cnbc.com',
+      'bbc.com',
       // Business data aggregators
       'crunchbase.com',
       'zoominfo.com',
@@ -118,7 +124,30 @@ export async function resolveDomainToWebsite(
       'owler.com',
       'growjo.com',
       'datanyze.com',
-      // Website comparison/aggregator sites - these list OTHER companies, not themselves
+      'pitchbook.com',
+      'cbinsights.com',
+      'craft.co',
+      'rocketreach.co',
+      'lusha.com',
+      'clearbit.com',
+      // Review / directory / listing sites
+      'yelp.com',
+      'bbb.org',
+      'trustpilot.com',
+      'g2.com',
+      'capterra.com',
+      'yellowpages.com',
+      'manta.com',
+      'mapquest.com',
+      'tripadvisor.com',
+      'angi.com',
+      'thumbtack.com',
+      'foursquare.com',
+      // Maps / local
+      'google.com',
+      'apple.com',
+      'bing.com',
+      // Website comparison/aggregator sites
       'sitelike.org',
       'similarweb.com',
       'similarsites.com',
@@ -131,6 +160,19 @@ export async function resolveDomainToWebsite(
       'glassdoor.com',
       'indeed.com',
       'ziprecruiter.com',
+      'salary.com',
+      'payscale.com',
+      'levels.fyi',
+      'comparably.com',
+      // Government / registries
+      'sec.gov',
+      'opencorporates.com',
+      'buzzfile.com',
+      // E-commerce platforms (list sellers, not themselves)
+      'amazon.com',
+      'ebay.com',
+      'walmart.com',
+      'alibaba.com',
     ]);
 
     // Remove blacklisted domains from discovered domains
@@ -219,9 +261,8 @@ export async function resolveDomainToWebsite(
 
     // Only change domain if:
     // 1. We found a different domain
-    // 2. That domain appears at least 2 times in results (strong signal)
-    // 3. OR if the first search result is from that domain (very strong signal)
-    if (resolvedDomain !== submittedDomainNormalized && maxCount >= 2) {
+    // 2. That domain appears at least 3 times in results (strong signal from 5 results)
+    if (resolvedDomain !== submittedDomainNormalized && maxCount >= 3) {
       console.log(`   🔄 Domain resolved: ${domain} → ${resolvedDomain} (appeared ${maxCount} times)`);
       return {
         submitted_domain: domain,
