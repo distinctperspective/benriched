@@ -50,7 +50,7 @@ function retrieveCandidateNAICS(
   const categoryMap: Record<string, { prefixes: string[]; keywords: string[] }> = {
     'food_manufacturing': {
       prefixes: ['311'], // Food Manufacturing
-      keywords: ['food', 'beverage', 'snack', 'sauce', 'dairy', 'meat', 'beef', 'pork', 'chicken', 'bakery', 'bread', 'cake', 'pastry', 'cheese', 'milk', 'chocolate', 'candy', 'confection', 'canned', 'frozen']
+      keywords: ['food', 'beverage', 'snack', 'sauce', 'dairy', 'meat', 'beef', 'pork', 'chicken', 'bakery', 'bread', 'cake', 'pastry', 'cheese', 'milk', 'chocolate', 'candy', 'confection', 'canned', 'frozen', 'meal kit', 'meal delivery', 'meal subscription', 'prepared meal']
     },
     'textile': {
       prefixes: ['313', '314', '315', '316'], // Textile, Apparel, Leather
@@ -162,11 +162,19 @@ Examples of text to IGNORE:
    - "operates restaurants", "fast-food chain", "restaurant operator" → Use 722xxx food service codes
    - If they OPERATE retail/restaurants, IGNORE any food/product keywords (they SELL products, don't MAKE them)
 
-2. **THEN: Check if they're a manufacturer** (only if NOT operating stores/restaurants)
+2. **SPECIAL CASE: Meal Kit/Delivery Companies** (before general manufacturing)
+   - "meal kit", "meal delivery", "meal subscription", "prepared meal delivery"
+   - Companies like HelloFresh, Blue Apron, Purple Carrot, Factor
+   - These are MANUFACTURERS → Use 311991 (Perishable Prepared Food Manufacturing)
+   - They prepare/package meals in facilities and ship to customers
+   - NOT food service (722xxx) - they don't operate restaurants/cafeterias/catering services
+   - NOT retail (44-45xxxx) - they don't operate physical stores
+
+3. **THEN: Check if they're a manufacturer** (only if NOT operating stores/restaurants)
    - "manufactures", "produces", "factory", "production facility" → Use 31-33xxxx manufacturing codes
    - NEVER use retail/wholesale codes for manufacturers
 
-3. **THEN: Check if they're a wholesaler** (only if NOT manufacturing or retailing)
+4. **THEN: Check if they're a wholesaler** (only if NOT manufacturing or retailing)
    - "distributes", "wholesaler", "supply chain" → Use 42xxxx wholesale codes
    - NEVER use manufacturing codes for wholesalers
 
@@ -334,6 +342,14 @@ export async function selectNAICSCodes(
         pattern: /\b(operates? stores?|retail chain|store operator|runs? stores?|operates? retail|retail operator)\b/i,
         blockedPrefixes: ['31', '32', '33', '42'], // Manufacturing and wholesale
         reason: 'company is a retailer, not a manufacturer/wholesaler'
+      },
+      {
+        // Block food service codes (722) for meal kit/delivery companies
+        // Companies like HelloFresh, Blue Apron, Purple Carrot are MANUFACTURERS (311991)
+        // They prepare/package meals for delivery, not operate restaurants/cafeterias
+        pattern: /\b(meal kit|meal delivery|meal subscription|prepared meal delivery|meal prep delivery)\b/i,
+        blockedPrefixes: ['722'], // All food services (722xxx)
+        reason: 'company is a meal kit manufacturer (311991), not a food service operator'
       }
     ];
 
