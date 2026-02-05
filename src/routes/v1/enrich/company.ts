@@ -8,6 +8,9 @@ import { AppEnv } from '../../../types.js';
 
 interface EnrichRequest {
   domain: string;
+  company_name?: string;       // Optional: helps with dead domains / email domains
+  state?: string;              // Optional: helps disambiguate company location
+  country?: string;            // Optional: helps with international companies
   hs_company_id?: string;
   force_refresh?: boolean;
   deep_research?: boolean;
@@ -23,7 +26,7 @@ export async function handleCompanyEnrichment(c: Context<AppEnv>) {
 
   try {
     const body = await c.req.json<EnrichRequest>();
-    const { domain, hs_company_id, force_refresh = false } = body;
+    const { domain, company_name, state, country, hs_company_id, force_refresh = false } = body;
 
     if (!domain) {
       return c.json({ error: 'Missing required field: domain' }, 400);
@@ -86,7 +89,12 @@ export async function handleCompanyEnrichment(c: Context<AppEnv>) {
       analysisModel,
       firecrawlApiKey,
       SEARCH_MODEL_ID,
-      ANALYSIS_MODEL_ID
+      ANALYSIS_MODEL_ID,
+      false,        // forceDeepResearch
+      undefined,    // emitter
+      company_name, // providedCompanyName
+      state,        // providedState
+      country       // providedCountry
     );
 
     // Save company to database

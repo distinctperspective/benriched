@@ -139,7 +139,10 @@ export async function enrichDomainWithCost(
   searchModelId: string = 'perplexity/sonar-pro',
   analysisModelId: string = 'openai/gpt-4o-mini',
   forceDeepResearch: boolean = false,
-  emitter?: SSEEmitter
+  emitter?: SSEEmitter,
+  providedCompanyName?: string,
+  providedState?: string,
+  providedCountry?: string
 ): Promise<EnrichmentResultWithCost> {
   const startTime = Date.now();
   console.log(`\n🚀 Starting enrichment for domain: ${domain}`);
@@ -192,7 +195,14 @@ export async function enrichDomainWithCost(
     data: { model: 'perplexity/sonar-pro' }
   });
 
-  let { result: pass1Result, usage: pass1Usage, rawResponse: pass1RawResponse } = await pass1_identifyUrlsWithUsage(enrichmentDomain, searchModel, searchModelId);
+  let { result: pass1Result, usage: pass1Usage, rawResponse: pass1RawResponse } = await pass1_identifyUrlsWithUsage(
+    enrichmentDomain,
+    searchModel,
+    searchModelId,
+    providedCompanyName,
+    providedState,
+    providedCountry
+  );
   const pass1Ms = Date.now() - pass1StartTime;
   console.log(`   📝 Company: ${pass1Result.company_name}`);
 
@@ -204,13 +214,45 @@ export async function enrichDomainWithCost(
 
     // FALLBACK: Dedicated LinkedIn search if Pass 1 didn't find it
     console.log(`\n🔍 Searching for LinkedIn page...`);
-    const linkedinSearchQuery = `${pass1Result.company_name} LinkedIn`;
 
-    // Try Gemini first if available (optional, faster/cheaper)
     let linkedinSearchResults: any[] = [];
-    if (process.env.GEMINI_API_KEY) {
+
+    // Primary: Use Firecrawl Google search (most accurate)
+    if (process.env.FIRECRAWL_API_KEY) {
       try {
-        console.log(`   🔎 Using Gemini search: "${linkedinSearchQuery}"`);
+        // Use Google site search for better accuracy
+        const firecrawlQuery = `"${pass1Result.company_name}" site:linkedin.com/company`;
+        console.log(`   🔎 Using Firecrawl Google search: "${firecrawlQuery}"`);
+
+        const response = await fetch('https://api.firecrawl.dev/v1/search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.FIRECRAWL_API_KEY}`
+          },
+          body: JSON.stringify({
+            query: firecrawlQuery,
+            limit: 5
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          linkedinSearchResults = data.data || [];
+          console.log(`   ✅ Firecrawl found ${linkedinSearchResults.length} results`);
+        } else {
+          console.log(`   ⚠️  Firecrawl search failed: ${response.status}`);
+        }
+      } catch (error) {
+        console.log(`   ⚠️  Firecrawl search error: ${error}`);
+      }
+    }
+
+    // Fallback: Try Gemini if Firecrawl didn't find anything
+    if (linkedinSearchResults.length === 0 && process.env.GEMINI_API_KEY) {
+      try {
+        const linkedinSearchQuery = `${pass1Result.company_name} LinkedIn`;
+        console.log(`   🔎 Fallback to Gemini search: "${linkedinSearchQuery}"`);
         const geminiModel = gateway('google/gemini-2.0-flash-exp', {
           apiKey: process.env.GEMINI_API_KEY
         });
@@ -247,14 +289,15 @@ If no LinkedIn page found, return:
           console.log(`   ⚠️  Gemini did not find LinkedIn page`);
         }
       } catch (error) {
-        console.log(`   ⚠️  Gemini search failed: ${error}, falling back to Firecrawl`);
+        console.log(`   ⚠️  Gemini search failed: ${error}`);
       }
     }
 
-    // Fallback to Firecrawl search
+    // Last resort: Try Firecrawl again with simpler query (without site: filter)
     if (linkedinSearchResults.length === 0 && process.env.FIRECRAWL_API_KEY) {
       try {
-        console.log(`   🔎 Using Firecrawl search: "${linkedinSearchQuery}"`);
+        const simpleQuery = `${pass1Result.company_name} LinkedIn company page`;
+        console.log(`   🔎 Firecrawl simple search: "${simpleQuery}"`);
         const response = await fetch('https://api.firecrawl.dev/v1/search', {
           method: 'POST',
           headers: {
@@ -262,7 +305,7 @@ If no LinkedIn page found, return:
             'Authorization': `Bearer ${process.env.FIRECRAWL_API_KEY}`
           },
           body: JSON.stringify({
-            query: linkedinSearchQuery,
+            query: simpleQuery,
             limit: 5
           })
         });
@@ -270,12 +313,12 @@ If no LinkedIn page found, return:
         if (response.ok) {
           const data = await response.json();
           linkedinSearchResults = data.data || [];
-          console.log(`   ✅ Found ${linkedinSearchResults.length} search results`);
+          console.log(`   ✅ Firecrawl simple search found ${linkedinSearchResults.length} results`);
         } else {
-          console.log(`   ⚠️  Firecrawl search failed: ${response.status}`);
+          console.log(`   ⚠️  Firecrawl simple search failed: ${response.status}`);
         }
       } catch (error) {
-        console.log(`   ⚠️  LinkedIn search failed: ${error}`);
+        console.log(`   ⚠️  Firecrawl simple search error: ${error}`);
       }
     }
 
@@ -593,12 +636,14 @@ If no LinkedIn page found, return:
     }
   }
   
-  // VALIDATE LinkedIn URL - only validate if from Pass 1 (website links are authoritative)
+  // Prepare validation data (used for both Pass 1 and website LinkedIn validation)
+  const expectedEmployees = pass1Result.employee_count_found?.amount || null;
+  const expectedLocation = pass1Result.headquarters?.city || null;
+
+  // VALIDATE LinkedIn URL - validate both Pass 1 and website sources
   if (linkedinFromScrape && linkedinSource === 'pass1') {
     console.log(`\n🔍 Validating LinkedIn page (from Pass 1, needs verification)...`);
-    const expectedEmployees = pass1Result.employee_count_found?.amount || null;
-    const expectedLocation = pass1Result.headquarters?.city || null;
-    
+
     const validation = await validateLinkedInPage(
       linkedinFromScrape,
       domain,
@@ -627,7 +672,29 @@ If no LinkedIn page found, return:
       }
     }
   } else if (linkedinFromScrape && linkedinSource === 'website') {
-    console.log(`\n✅ LinkedIn from company website - no validation needed (authoritative source)`);
+    // Validate website LinkedIn too - it might link to parent company instead
+    console.log(`\n🔍 Validating LinkedIn from company website...`);
+
+    const validation = await validateLinkedInPage(
+      linkedinFromScrape,
+      domain,
+      expectedEmployees,
+      expectedLocation,
+      scrapedContent,
+      firecrawlApiKey
+    );
+
+    if (!validation.isValid) {
+      console.log(`   ⚠️  Website LinkedIn validation FAILED: ${validation.reason}`);
+      console.log(`   ❌ Rejecting website LinkedIn - likely parent company or wrong match`);
+      linkedinFromScrape = null;
+    } else {
+      console.log(`   ✅ Website LinkedIn validation passed`);
+      if (validation.linkedinEmployees) {
+        linkedinEmployeeCount = validation.linkedinEmployees;
+        console.log(`   👥 LinkedIn employees: ${linkedinEmployeeCount}`);
+      }
+    }
   }
   
   // Always search for employee count in scraped content if we don't have it yet

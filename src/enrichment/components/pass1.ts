@@ -9,13 +9,31 @@ export interface Pass1WithUsage {
   rawResponse?: string;
 }
 
-export async function pass1_identifyUrls(domain: string, model: any, modelId: string = 'perplexity/sonar-pro'): Promise<Pass1Result> {
-  const { result } = await pass1_identifyUrlsWithUsage(domain, model, modelId);
+export async function pass1_identifyUrls(
+  domain: string,
+  model: any,
+  modelId: string = 'perplexity/sonar-pro',
+  providedCompanyName?: string,
+  providedState?: string,
+  providedCountry?: string
+): Promise<Pass1Result> {
+  const { result } = await pass1_identifyUrlsWithUsage(domain, model, modelId, providedCompanyName, providedState, providedCountry);
   return result;
 }
 
-export async function pass1_identifyUrlsWithUsage(domain: string, model: any, modelId: string = 'perplexity/sonar-pro'): Promise<Pass1WithUsage> {
-  console.log(`\n📋 Pass 1: Identifying URLs to crawl...`);
+export async function pass1_identifyUrlsWithUsage(
+  domain: string,
+  model: any,
+  modelId: string = 'perplexity/sonar-pro',
+  providedCompanyName?: string,
+  providedState?: string,
+  providedCountry?: string
+): Promise<Pass1WithUsage> {
+  if (providedCompanyName) {
+    console.log(`\n📋 Pass 1: Searching for "${providedCompanyName}"${providedState ? ` (${providedState})` : ''}...`);
+  } else {
+    console.log(`\n📋 Pass 1: Identifying URLs to crawl...`);
+  }
   
   // Define JSON schema for structured output
   const pass1Schema = {
@@ -90,12 +108,31 @@ export async function pass1_identifyUrlsWithUsage(domain: string, model: any, mo
     required: ["company_name", "urls_to_crawl"]
   };
   
+  // Build the search query based on what information we have
+  let searchQuery: string;
+  if (providedCompanyName) {
+    // We have the company name - search by name instead of domain
+    const locationPart = providedState && providedCountry
+      ? ` located in ${providedState}, ${providedCountry}`
+      : providedState
+        ? ` in ${providedState}`
+        : providedCountry
+          ? ` in ${providedCountry}`
+          : '';
+    searchQuery = `Find annual revenue and employee count for "${providedCompanyName}"${locationPart}.
+
+**IMPORTANT**: The company name is "${providedCompanyName}". The domain "${domain}" may be an email domain that doesn't have a website. Focus your search on the company NAME, not the domain.`;
+  } else {
+    // No company name provided - search by domain (current behavior)
+    searchQuery = `Find annual revenue and employee count for the company at ${domain}.`;
+  }
+
   // Note: Perplexity may not support response_format yet
   // Schema defined above for documentation and future use when supported
   const { text, usage } = await generateText({
     model,
     // response_format: { type: 'json', schema: pass1Schema }, // TODO: Enable when Perplexity supports it
-    prompt: `Find annual revenue and employee count for the company at ${domain}.
+    prompt: searchQuery + `
 
 #ENTITY SCOPE TRACKING#
 
