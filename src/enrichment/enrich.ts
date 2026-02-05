@@ -322,21 +322,52 @@ If no LinkedIn page found, return:
       }
     }
 
-    // Extract LinkedIn URL from search results
+    // Extract LinkedIn URLs from search results and rank by follower count
     if (linkedinSearchResults.length > 0) {
+      const linkedinCandidates: Array<{ url: string; followers: number; source: string }> = [];
+
       for (const result of linkedinSearchResults) {
         const url = result.url || result.link || '';
         if (url.includes('linkedin.com/company/') && !url.includes('/posts') && !url.includes('/jobs')) {
-          // Add to Pass 1 result so it gets picked up by existing logic
-          pass1Result.linkedin_url_candidates = [{
+          // Try to extract follower count from title or description
+          const text = `${result.title || ''} ${result.description || ''}`;
+          const followerMatch = text.match(/(\d+(?:\.\d+)?)\s*([KM])?\+?\s*followers/i);
+
+          let followerCount = 0;
+          if (followerMatch) {
+            const num = parseFloat(followerMatch[1]);
+            const multiplier = followerMatch[2] === 'K' ? 1000 : followerMatch[2] === 'M' ? 1000000 : 1;
+            followerCount = num * multiplier;
+          }
+
+          linkedinCandidates.push({
             url: url.replace(/\/$/, ''),
-            confidence: 'medium'
-          }];
-          console.log(`   ✅ Found LinkedIn via search: ${url}`);
-          break;
+            followers: followerCount,
+            source: followerCount > 0 ? `${followerMatch![0]}` : 'unknown'
+          });
         }
       }
-      if (!pass1Result.linkedin_url_candidates || pass1Result.linkedin_url_candidates.length === 0) {
+
+      if (linkedinCandidates.length > 0) {
+        // Sort by follower count (highest first)
+        linkedinCandidates.sort((a, b) => b.followers - a.followers);
+
+        // Pick the one with most followers
+        const bestCandidate = linkedinCandidates[0];
+        pass1Result.linkedin_url_candidates = [{
+          url: bestCandidate.url,
+          confidence: 'medium'
+        }];
+
+        if (linkedinCandidates.length > 1) {
+          console.log(`   ✅ Found ${linkedinCandidates.length} LinkedIn pages, picked highest followers:`);
+          linkedinCandidates.forEach(c => {
+            console.log(`      ${c.followers > 0 ? '👥 ' + c.source : '   ?'} - ${c.url}${c.url === bestCandidate.url ? ' ← SELECTED' : ''}`);
+          });
+        } else {
+          console.log(`   ✅ Found LinkedIn via search: ${bestCandidate.url}${bestCandidate.followers > 0 ? ` (${bestCandidate.source})` : ''}`);
+        }
+      } else {
         console.log(`   ⚠️  No LinkedIn URL found in search results`);
       }
     }
