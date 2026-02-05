@@ -144,12 +144,15 @@ For employee count, provide:
 - scope: "operating_company" OR "ultimate_parent"
 - source_type: Same enum as revenue
 
-#LINKEDIN (OPTIONAL)#
+#LINKEDIN (HIGH PRIORITY)#
 
-LinkedIn is OPTIONAL and NON-BLOCKING. If you find LinkedIn URLs:
+**IMPORTANT**: Actively search for the company's LinkedIn page:
+- Search specifically for: "[Company Name] LinkedIn"
+- Look for LinkedIn URLs in search results, company website, ZoomInfo, Crunchbase
 - Return linkedin_url_candidates: [{"url": "https://linkedin.com/company/slug", "confidence": "high"}]
-- Do NOT require exact verification
-- Include top 2-3 candidates if multiple exist
+- Include the best 1-2 candidates if found
+- Even if you're not 100% certain, include likely matches with appropriate confidence level
+- LinkedIn is valuable for data quality - make a strong effort to find it
 
 #CANONICAL WEBSITE (REQUIRED)#
 

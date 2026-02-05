@@ -194,6 +194,76 @@ export async function enrichDomainWithCost(
   const pass1Ms = Date.now() - pass1StartTime;
   console.log(`   📝 Company: ${pass1Result.company_name}`);
 
+  // Debug: Check if Pass 1 returned LinkedIn candidates
+  if (pass1Result.linkedin_url_candidates && pass1Result.linkedin_url_candidates.length > 0) {
+    console.log(`   🔗 Pass 1 LinkedIn candidates: ${pass1Result.linkedin_url_candidates.map(c => `${c.url} (${c.confidence})`).join(', ')}`);
+  } else {
+    console.log(`   ⚠️  Pass 1 returned no LinkedIn candidates`);
+
+    // FALLBACK: Dedicated LinkedIn search if Pass 1 didn't find it
+    console.log(`\n🔍 Searching for LinkedIn page...`);
+    const linkedinSearchQuery = `${pass1Result.company_name} LinkedIn`;
+
+    // Try Gemini first if available (optional, faster/cheaper)
+    let linkedinSearchResults: any[] = [];
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        console.log(`   🔎 Using Gemini search: "${linkedinSearchQuery}"`);
+        // TODO: Implement Gemini search when available
+        // linkedinSearchResults = await geminiSearch(linkedinSearchQuery);
+      } catch (error) {
+        console.log(`   ⚠️  Gemini search failed, falling back to Firecrawl`);
+      }
+    }
+
+    // Fallback to Firecrawl search
+    if (linkedinSearchResults.length === 0 && process.env.FIRECRAWL_API_KEY) {
+      try {
+        console.log(`   🔎 Using Firecrawl search: "${linkedinSearchQuery}"`);
+        const response = await fetch('https://api.firecrawl.dev/v1/search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${process.env.FIRECRAWL_API_KEY}`
+          },
+          body: JSON.stringify({
+            query: linkedinSearchQuery,
+            limit: 5
+          })
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          linkedinSearchResults = data.data || [];
+          console.log(`   ✅ Found ${linkedinSearchResults.length} search results`);
+        } else {
+          console.log(`   ⚠️  Firecrawl search failed: ${response.status}`);
+        }
+      } catch (error) {
+        console.log(`   ⚠️  LinkedIn search failed: ${error}`);
+      }
+    }
+
+    // Extract LinkedIn URL from search results
+    if (linkedinSearchResults.length > 0) {
+      for (const result of linkedinSearchResults) {
+        const url = result.url || result.link || '';
+        if (url.includes('linkedin.com/company/') && !url.includes('/posts') && !url.includes('/jobs')) {
+          // Add to Pass 1 result so it gets picked up by existing logic
+          pass1Result.linkedin_url_candidates = [{
+            url: url.replace(/\/$/, ''),
+            confidence: 'medium'
+          }];
+          console.log(`   ✅ Found LinkedIn via search: ${url}`);
+          break;
+        }
+      }
+      if (!pass1Result.linkedin_url_candidates || pass1Result.linkedin_url_candidates.length === 0) {
+        console.log(`   ⚠️  No LinkedIn URL found in search results`);
+      }
+    }
+  }
+
   await emitter?.emit({
     stage: 'pass1_search',
     message: 'Web search complete',
@@ -466,17 +536,25 @@ export async function enrichDomainWithCost(
     }
   }
   
-  // If not found on company site, check Pass 1 results (Perplexity found it - less reliable)
+  // If not found on company site, check Pass 1 linkedin_url_candidates (preferred)
+  if (!linkedinFromScrape && pass1Result.linkedin_url_candidates && pass1Result.linkedin_url_candidates.length > 0) {
+    const bestCandidate = pass1Result.linkedin_url_candidates[0]; // Take highest confidence
+    linkedinFromScrape = bestCandidate.url.replace(/\/$/, '');
+    linkedinSource = 'pass1';
+    console.log(`   🔗 Using LinkedIn from Pass 1 candidates (${bestCandidate.confidence} confidence): ${linkedinFromScrape}`);
+  }
+
+  // Fallback: check urls_to_crawl if no candidates found
   if (!linkedinFromScrape && pass1Result.urls_to_crawl) {
-    const linkedinUrl = pass1Result.urls_to_crawl.find(u => 
-      u.includes('linkedin.com/company/') && 
-      !u.includes('/crunchbase') && 
+    const linkedinUrl = pass1Result.urls_to_crawl.find(u =>
+      u.includes('linkedin.com/company/') &&
+      !u.includes('/crunchbase') &&
       !u.includes('/zoominfo')
     );
     if (linkedinUrl) {
       linkedinFromScrape = linkedinUrl.replace(/\/$/, '');
       linkedinSource = 'pass1';
-      console.log(`   🔗 Using LinkedIn from Pass 1 (needs validation): ${linkedinFromScrape}`);
+      console.log(`   🔗 Using LinkedIn from Pass 1 URLs (needs validation): ${linkedinFromScrape}`);
     }
   }
   
