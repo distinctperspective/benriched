@@ -659,7 +659,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const requestStartTime = Date.now();
-  const { domain, hs_company_id, hs_object_id, force_refresh = false, async = false, deep_research = false } = body || {};
+  const { domain, company_name, hs_company_id, hs_object_id, force_refresh = false, async = false, deep_research = false } = body || {};
   const companyId = hs_company_id || hs_object_id; // Support both field names
   const requestId = randomUUID();
 
@@ -784,12 +784,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         process.env.FIRECRAWL_API_KEY,
         SEARCH_MODEL_ID,
         ANALYSIS_MODEL_ID,
-        deep_research as boolean
+        deep_research as boolean,
+        undefined,    // emitter
+        company_name, // providedCompanyName
       );
 
       // Save company (include hs_company_id if provided)
+      // Use result.domain (corrected domain from enrichment) instead of normalizedDomain
       const companyData: Record<string, unknown> = {
-        domain: normalizedDomain,
+        domain: result.domain || normalizedDomain,
         company_name: result.company_name,
         website: result.website,
         linkedin_url: result.linkedin_url,
@@ -803,11 +806,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         is_us_subsidiary: result.is_us_subsidiary,
         naics_codes_6_digit: result.naics_codes_6_digit || [],
         naics_codes_csv: result.naics_codes_csv,
-        target_icp: result.target_icp,
+        // target_icp removed - calculated by database trigger
         target_icp_matches: result.target_icp_matches || [],
         source_urls: result.source_urls || [],
         quality: result.quality,
         performance_metrics: result.performance,
+        last_enriched_at: new Date().toISOString(),
+        // Parent company linking
+        parent_company_name: result.parent_company_name || null,
+        parent_company_domain: result.parent_company_domain || null,
+        inherited_revenue: result.inherited_revenue || false,
+        inherited_size: result.inherited_size || false,
       };
       
       // Add hs_company_id if provided from HubSpot
@@ -844,7 +853,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const responseTimeMs = Date.now() - requestStartTime;
         const requestRecord: EnrichmentRequestRecord = {
           hs_company_id: companyId || `api_${requestId}`,
-          domain: normalizedDomain,
+          domain: result.domain || normalizedDomain,
           company_id: savedCompany.id,
           request_source: companyId ? 'hubspot' : 'api',
           request_type: requestType,
