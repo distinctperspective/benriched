@@ -790,9 +790,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       );
 
       // Save company (include hs_company_id if provided)
-      // Use result.domain (corrected domain from enrichment) instead of normalizedDomain
+      // Always use normalizedDomain for upsert key to avoid creating duplicates when domain resolves differently
       const companyData: Record<string, unknown> = {
-        domain: result.domain || normalizedDomain,
+        domain: normalizedDomain,
         company_name: result.company_name,
         website: result.website,
         linkedin_url: result.linkedin_url,
@@ -853,7 +853,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         const responseTimeMs = Date.now() - requestStartTime;
         const requestRecord: EnrichmentRequestRecord = {
           hs_company_id: companyId || `api_${requestId}`,
-          domain: result.domain || normalizedDomain,
+          domain: normalizedDomain,
           company_id: savedCompany.id,
           request_source: companyId ? 'hubspot' : 'api',
           request_type: requestType,
