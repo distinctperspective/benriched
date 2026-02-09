@@ -2,10 +2,10 @@
 
 ## Overview
 
-The Benriched enrichment system is a sophisticated multi-stage pipeline that combines web search, intelligent scraping, and AI analysis to extract and validate company data. It uses a dual-AI approach (Perplexity for web search, GPT-4o-mini for analysis) with automatic outlier detection and parent company data inheritance.
+The Benriched enrichment system is a multi-stage pipeline that combines web search, intelligent scraping, and AI analysis to extract and validate company data. It uses a dual-AI approach (Perplexity for web search, GPT-4o-mini for analysis) with automatic outlier detection and parent company data inheritance.
 
 **Key Characteristics:**
-- Multi-stage data collection and validation pipeline
+- Modular pipeline architecture with isolated, testable stages
 - Cost-optimized web scraping with intelligent URL prioritization
 - Dual LLM approach: Perplexity (web search) + GPT-4o-mini (content analysis)
 - Automatic deep research triggers for data conflicts
@@ -17,12 +17,13 @@ The Benriched enrichment system is a sophisticated multi-stage pipeline that com
 ## Table of Contents
 
 1. [High-Level Architecture](#high-level-architecture)
-2. [Company Enrichment Pipeline (12 Stages)](#company-enrichment-pipeline-12-stages)
-3. [Contact Enrichment Workflow](#contact-enrichment-workflow)
-4. [Cost Tracking & Optimization](#cost-tracking--optimization)
-5. [Quality Assurance Mechanisms](#quality-assurance-mechanisms)
-6. [External Integrations](#external-integrations)
-7. [Performance Characteristics](#performance-characteristics)
+2. [Pipeline Architecture (Code Structure)](#pipeline-architecture-code-structure)
+3. [Company Enrichment Pipeline (12 Stages)](#company-enrichment-pipeline-12-stages)
+4. [Contact Enrichment Workflow](#contact-enrichment-workflow)
+5. [Cost Tracking & Optimization](#cost-tracking--optimization)
+6. [Quality Assurance Mechanisms](#quality-assurance-mechanisms)
+7. [External Integrations](#external-integrations)
+8. [Performance Characteristics](#performance-characteristics)
 
 ---
 
@@ -107,76 +108,292 @@ The Benriched enrichment system is a sophisticated multi-stage pipeline that com
 
 ---
 
-## Company Enrichment Pipeline (12 Stages)
+## Pipeline Architecture (Code Structure)
 
-### Stage 0: Domain Normalization & Cache Check
+The enrichment pipeline was modularized in February 2026 to improve debuggability, readability, and testability. What was a single 1,142-line function is now a pipeline of isolated stage files sharing a common context object.
 
-**Purpose:** Prepare the domain input and check for cached data.
+### File Layout
 
-**Process:**
-1. Normalize Domain
-   - Strip `https://`, `http://`, `www.` prefixes
-   - Remove trailing slashes
-   - Example: `https://www.example.com/` → `example.com`
+```
+src/enrichment/
+  enrich.ts                          ← 57 lines: thin wrapper, creates context, calls orchestrator
+  deepResearch.ts                    ← unchanged: outlier detection + deep research queries
+  scraper.ts → ../scraper.ts         ← unchanged: Firecrawl scraping utilities
+  components/                        ← unchanged: reusable building blocks
+    pass1.ts                           Perplexity web search
+    pass2.ts                           GPT-4o-mini content analysis
+    domainResolver.ts                  Domain resolution via Firecrawl
+    entityDetection.ts                 Entity mismatch detection
+    linkedin.ts                        LinkedIn page validation
+    urlCategorization.ts               URL tier classification
+    employees.ts                       Employee count → band mapping
+    pricing.ts                         AI cost calculation
+    icp.ts                             ICP matching constants
+    naics.ts                           NAICS code utilities
+    prompts.ts                         LLM prompt templates
+  pipeline/                          ← NEW: modular pipeline
+    context.ts           (151 lines)   Shared state: EnrichmentContext, CostAccumulator, TimingTracker
+    orchestrator.ts       (33 lines)   Calls 12 stages in sequence
+    parent-domains.ts     (92 lines)   KNOWN_PARENT_DOMAINS map + guessParentDomain()
+    stages/
+      domain-resolution.ts   (31 lines)  Stage 1: Resolve domain to company website
+      pass1-search.ts        (47 lines)  Stage 2: Perplexity web search
+      linkedin-search.ts    (164 lines)  Stage 3: Fallback LinkedIn search (Firecrawl + Gemini)
+      deep-research.ts       (90 lines)  Stage 4: Conditional deep research
+      url-selection.ts       (51 lines)  Stage 5: Smart URL tier selection
+      scraping.ts            (33 lines)  Stage 6: Firecrawl multi-page scraping
+      entity-validation.ts   (68 lines)  Stage 7: Entity mismatch detection + strict re-run
+      linkedin-validation.ts(165 lines)  Stage 8: LinkedIn extraction + validation
+      pass2-analysis.ts      (37 lines)  Stage 9: GPT-4o-mini content analysis
+      data-estimation.ts    (182 lines)  Stage 10: Revenue/size estimation + sanity checks
+      parent-enrichment.ts   (99 lines)  Stage 11: Parent company data inheritance
+      final-assembly.ts      (97 lines)  Stage 12: Cost calculation + result assembly
+```
 
-2. Cache Lookup (unless `force_refresh=true`)
-   - Query database for existing company record by domain
-   - If found: Return cached data immediately
-   - Track request as "cached" type with 0 cost
-   - Response time is typically <10ms
+### How It Fits Together
 
-3. If Not Cached: Proceed to enrichment pipeline
+```
+                        ┌──────────────────────────┐
+                        │  Route Handler            │
+                        │  (v1/enrich/company.ts)   │
+                        └────────────┬─────────────┘
+                                     │ calls
+                                     ▼
+                        ┌──────────────────────────┐
+                        │  enrich.ts                │
+                        │  enrichDomainWithCost()   │
+                        │                          │
+                        │  1. createContext(opts)   │
+                        │  2. runEnrichmentPipeline │
+                        └────────────┬─────────────┘
+                                     │ creates & passes
+                                     ▼
+                  ┌─────────────────────────────────────┐
+                  │  EnrichmentContext                   │
+                  │                                     │
+                  │  Inputs:  domain, models, emitter   │
+                  │  State:   pass1Result, pass2Result, │
+                  │           scrapedContent, linkedin   │
+                  │  Helpers: CostAccumulator,          │
+                  │           TimingTracker              │
+                  └──────────────────┬──────────────────┘
+                                     │ flows through
+                                     ▼
+                  ┌─────────────────────────────────────┐
+                  │  orchestrator.ts                     │
+                  │                                     │
+                  │  runDomainResolution(ctx)            │
+                  │  runPass1Search(ctx)                 │
+                  │  runLinkedInSearch(ctx)              │
+                  │  runDeepResearchStage(ctx)           │
+                  │  urls = runUrlSelection(ctx)         │
+                  │  runScraping(ctx, urls)              │
+                  │  runEntityValidation(ctx)            │
+                  │  runLinkedInValidation(ctx)          │
+                  │  runPass2Analysis(ctx)               │
+                  │  runDataEstimation(ctx)              │
+                  │  runParentEnrichment(ctx)            │
+                  │  return runFinalAssembly(ctx)        │
+                  └─────────────────────────────────────┘
+```
+
+### The EnrichmentContext
+
+Instead of 80+ loose variables scattered through one function, a single shared state object flows through all stages:
+
+```typescript
+interface EnrichmentContext {
+  // --- Inputs (set once at creation, never modified) ---
+  domain: string;                    // Original input domain
+  providedCompanyName?: string;      // Optional hint from caller
+  providedState?: string;            // Optional hint from caller
+  providedCountry?: string;          // Optional hint from caller
+  forceDeepResearch: boolean;        // Force deep research pass
+  searchModel: any;                  // Perplexity model instance
+  analysisModel: any;                // GPT-4o-mini model instance
+  searchModelId: string;             // "perplexity/sonar-pro"
+  analysisModelId: string;           // "openai/gpt-4o-mini"
+  firecrawlApiKey?: string;          // Firecrawl API key
+  emitter?: SSEEmitter;              // Optional SSE stream for progress events
+
+  // --- Accumulated state (stages read and write these) ---
+  enrichmentDomain: string;          // After domain resolution (may differ from input)
+  pass1Result: Pass1Result | null;   // Web search results
+  pass1RawResponse: string;          // Raw Perplexity response for debugging
+  deepResearchResult: DeepResearchResult | null;
+  outlierFlags: OutlierFlags | null; // What triggered deep research
+  scrapedContent: Map<string, string>; // URL → markdown content
+  scrapeResult: { totalCreditsUsed: number; scrapeCount: number } | null;
+  linkedinUrl: string | null;        // Validated LinkedIn URL
+  linkedinSource: 'website' | 'pass1' | null;
+  linkedinEmployeeCount: string | null;
+  pass2Result: EnrichmentResult | null; // GPT analysis result
+  pass2RawResponse: string;          // Raw GPT response for debugging
+  domainResolution: { ... } | null;  // Domain resolution details
+
+  // --- Cross-cutting concerns ---
+  costs: CostAccumulator;            // Tracks AI tokens + Firecrawl credits
+  timing: TimingTracker;             // Tracks ms per stage
+  rawApiResponses: Record<string, any>;
+}
+```
+
+### CostAccumulator
+
+Tracks all cost components across stages:
+
+```typescript
+class CostAccumulator {
+  pass1Usage: AIUsage | null;        // Perplexity tokens + cost
+  pass2Usage: AIUsage | null;        // GPT-4o-mini tokens + cost
+  deepResearchUsage: AIUsage | null; // Deep research tokens + cost
+  firecrawlCredits: number;          // Total Firecrawl credits consumed
+  scrapeCount: number;               // Total pages scraped
+
+  addFirecrawlCredits(credits: number): void;
+  setScrapeCount(count: number): void;
+}
+```
+
+### TimingTracker
+
+Tracks execution time per stage:
+
+```typescript
+class TimingTracker {
+  start(stage: string): void;  // Record start time
+  end(stage: string): number;  // Record end time, return duration in ms
+  get(stage: string): number;  // Get duration of a completed stage
+  get totalMs(): number;       // Time since pipeline started
+}
+```
+
+### Stage Pattern
+
+Every stage follows the same pattern:
+
+```typescript
+// stages/example-stage.ts
+import { EnrichmentContext } from '../context.js';
+
+export async function runExampleStage(ctx: EnrichmentContext): Promise<void> {
+  // 1. Emit SSE progress event (started)
+  await ctx.emitter?.emit({ stage: 'example', message: '...', status: 'started' });
+
+  // 2. Start timing
+  ctx.timing.start('example');
+
+  // 3. Do the work (call components, APIs, etc.)
+  const result = await someComponent(ctx.enrichmentDomain, ctx.firecrawlApiKey);
+
+  // 4. Write results to context
+  ctx.someField = result;
+  ctx.costs.addFirecrawlCredits(result.credits);
+
+  // 5. End timing
+  ctx.timing.end('example');
+
+  // 6. Emit SSE progress event (complete)
+  await ctx.emitter?.emit({ stage: 'example', message: '...', status: 'complete' });
+}
+```
+
+### Backwards Compatibility
+
+The public API is unchanged. `enrichDomainWithCost()` in `enrich.ts` has the exact same function signature as before:
+
+```typescript
+export async function enrichDomainWithCost(
+  domain: string,
+  searchModel: any,
+  analysisModel: any,
+  firecrawlApiKey?: string,
+  searchModelId?: string,
+  analysisModelId?: string,
+  forceDeepResearch?: boolean,
+  emitter?: SSEEmitter,
+  providedCompanyName?: string,
+  providedState?: string,
+  providedCountry?: string
+): Promise<EnrichmentResultWithCost>
+```
+
+All callers (`api/index.ts`, `src/routes/v1/enrich/company.ts`, etc.) are untouched. The re-exports for external consumers (`calculateAICost`, `pass1_identifyUrls`, `pass2_analyzeContent`) are preserved.
 
 ---
 
-### Stage 1: Domain Resolution
+## Company Enrichment Pipeline (12 Stages)
 
-**Purpose:** Handle cases where the domain is dead, email-only, or doesn't have a live website.
+### Data Flow Through Stages
 
-**Process:**
-1. Check if domain has a valid website
-2. If domain is dead/invalid, use Firecrawl to search for the actual company website
-3. Return resolved domain for use in subsequent stages
-4. Track Firecrawl credits used
-
-**Output:**
-```typescript
-{
-  submitted_domain: string;
-  resolved_domain: string;
-  domain_changed: boolean;
-  resolution_method: string;
-  credits_used: number;
-}
+```
+ctx.domain ──→ [1 Domain Resolution] ──→ ctx.enrichmentDomain
+                                           │
+                                           ▼
+                                 [2 Pass 1 Search] ──→ ctx.pass1Result
+                                           │              (company_name, revenue_found,
+                                           │               employee_count, urls_to_crawl,
+                                           │               linkedin_candidates, headquarters)
+                                           ▼
+                                 [3 LinkedIn Search] ──→ ctx.pass1Result.linkedin_url_candidates
+                                           │              (enriched if Pass 1 found none)
+                                           ▼
+                                 [4 Deep Research] ──→ ctx.deepResearchResult
+                                           │            (merged into ctx.pass1Result)
+                                           ▼
+                                 [5 URL Selection] ──→ urlsToScrape[] (local, passed to stage 6)
+                                           │
+                                           ▼
+                                 [6 Scraping] ──→ ctx.scrapedContent (Map<url, markdown>)
+                                           │
+                                           ▼
+                                 [7 Entity Validation] ──→ ctx.pass1Result (may be replaced)
+                                           │                ctx.scrapedContent (may be replaced)
+                                           ▼
+                                 [8 LinkedIn Validation] ──→ ctx.linkedinUrl
+                                           │                  ctx.linkedinEmployeeCount
+                                           ▼
+                                 [9 Pass 2 Analysis] ──→ ctx.pass2Result (the enrichment result)
+                                           │
+                                           ▼
+                                 [10 Data Estimation] ──→ ctx.pass2Result (gaps filled, ICP recalculated)
+                                           │
+                                           ▼
+                                 [11 Parent Enrichment] ──→ ctx.pass2Result (parent data inherited)
+                                           │
+                                           ▼
+                                 [12 Final Assembly] ──→ EnrichmentResultWithCost (returned to caller)
 ```
 
 ---
 
-### Stage 2: Pass 1 - Web Search (Perplexity Sonar Pro)
+### Stage 1: Domain Resolution
+**File:** `pipeline/stages/domain-resolution.ts` (31 lines)
 
-**Purpose:** Use web search to identify the company, find key data points, and determine which URLs to scrape.
-
-**Model:** Perplexity Sonar Pro (via AI Gateway)
+**Purpose:** Handle cases where the input domain is dead, email-only, or redirects elsewhere.
 
 **Process:**
+1. Call `resolveDomainToWebsite()` via Firecrawl search
+2. If domain changed, update `ctx.enrichmentDomain`
+3. Track Firecrawl credits consumed
 
-1. **Company Identification**
-   - Search web for company information at domain
-   - Identify company name
-   - Detect parent company relationships (if subsidiary/brand)
-   - Classify entity scope: "operating_company" vs "ultimate_parent"
+**Reads from context:** `ctx.domain`, `ctx.firecrawlApiKey`
+**Writes to context:** `ctx.enrichmentDomain`, `ctx.domainResolution`, `ctx.costs`
 
-2. **Data Collection from Web Search**
-   - Search for annual revenue figures
-   - Search for employee count
-   - Identify headquarters location (city, state, country)
-   - Find LinkedIn company page candidates
-   - Collect evidence URLs and excerpts
+---
 
-3. **URL Categorization**
-   - Identify URLs to crawl in subsequent stages
-   - Prioritize: company website, LinkedIn, data aggregators
-   - Return list of URLs with context
+### Stage 2: Pass 1 Search
+**File:** `pipeline/stages/pass1-search.ts` (47 lines)
+
+**Purpose:** Use Perplexity Sonar Pro to search the web for company data.
+
+**Process:**
+1. Call `pass1_identifyUrlsWithUsage()` with the resolved domain
+2. Store the full result (company name, revenue evidence, employee data, URLs, LinkedIn candidates)
+3. Log what was found
+
+**Reads from context:** `ctx.enrichmentDomain`, `ctx.searchModel`, `ctx.searchModelId`, `ctx.providedCompanyName/State/Country`
+**Writes to context:** `ctx.pass1Result`, `ctx.pass1RawResponse`, `ctx.costs.pass1Usage`
 
 **Output (Pass1Result):**
 ```typescript
@@ -185,389 +402,229 @@ The Benriched enrichment system is a sophisticated multi-stage pipeline that com
   parent_company: string | null;
   entity_scope: "operating_company" | "ultimate_parent";
   relationship_type: "standalone" | "subsidiary" | "division" | "brand" | "unknown";
-  headquarters: {
-    city: string;
-    state: string;
-    country: string;
-    country_code: string;
-  };
+  headquarters: { city, state, country, country_code };
   urls_to_crawl: string[];
-  revenue_found: Array<{
-    amount: string;
-    source: string;
-    year: string;
-    is_estimate: boolean;
-    scope: "operating_company" | "ultimate_parent";
-    source_type: "filing" | "company_ir" | "company_site" | "reputable_media" | "estimate_site" | "directory" | "unknown";
-    evidence_url: string;
-    evidence_excerpt: string;
-  }>;
-  employee_count_found: {
-    amount: string;
-    source: string;
-    scope: "operating_company" | "ultimate_parent";
-    source_type: string;
-    evidence_url: string;
-  } | null;
-  linkedin_url_candidates: Array<{
-    url: string;
-    confidence: "high" | "medium" | "low";
-  }>;
+  revenue_found: RevenueEvidence[];
+  employee_count_found: EmployeeEvidence | null;
+  linkedin_url_candidates: Array<{ url: string; confidence: "high" | "medium" | "low" }>;
 }
 ```
 
 ---
 
-### Stage 3: Deep Research (Conditional)
+### Stage 3: LinkedIn Search (Conditional)
+**File:** `pipeline/stages/linkedin-search.ts` (164 lines)
+
+**Purpose:** Fallback LinkedIn search when Pass 1 didn't find any LinkedIn candidates.
+
+**Condition:** Only runs if `pass1Result.linkedin_url_candidates` is empty.
+
+**Fallback chain (tries in order until one works):**
+1. **Firecrawl Google search** - `"Company Name" site:linkedin.com/company`
+2. **Gemini AI search** - Asks Gemini to find the LinkedIn URL
+3. **Firecrawl simple search** - `Company Name LinkedIn company page` (no site: filter)
+
+**Ranking:** If multiple LinkedIn pages found, picks the one with the most followers.
+
+**Reads from context:** `ctx.pass1Result`
+**Writes to context:** `ctx.pass1Result.linkedin_url_candidates` (adds candidates)
+
+---
+
+### Stage 4: Deep Research (Conditional)
+**File:** `pipeline/stages/deep-research.ts` (90 lines)
 
 **Purpose:** Conduct targeted research when Pass 1 results have outliers or missing data.
 
-**Trigger Conditions:**
-
-Deep research is automatically triggered if Pass 1 results have outliers:
-1. **Missing Revenue** - No revenue figures found
-2. **Missing Employees** - No employee count found
-3. **Missing Location** - No headquarters location found
-4. **Revenue/Size Mismatch** - Revenue > $100M but employees < 50 (suspicious)
-5. **Source Conflicts** - Revenue figures differ by >5x (conflicting sources)
-6. **Public Company** - Detected as publicly traded (needs SEC data)
-
-Can also be forced via `forceDeepResearch` parameter.
+**Trigger conditions (any of):**
+- Missing revenue figures
+- Missing employee count
+- Missing headquarters location
+- Revenue/size mismatch (>$100M revenue but <50 employees)
+- Source conflicts (>5x difference between revenue figures)
+- Can also be forced via `ctx.forceDeepResearch`
 
 **Process:**
-1. Run focused web searches for missing/conflicting data
-2. Attempt to resolve outliers with targeted queries
-3. Return additional evidence for revenue, employees, location
+1. Call `detectOutliers()` to check Pass 1 results
+2. If triggered, run `runDeepResearch()` - parallel Perplexity queries for revenue, employees, location
+3. Merge findings into `ctx.pass1Result` (prepends to existing evidence arrays)
 
-**Output (DeepResearchResult):**
-```typescript
-{
-  revenue: {
-    amount: string | null;
-    source: string | null;
-    year: string | null;
-    confidence: "high" | "medium" | "low";
-  } | null;
-  employees: {
-    count: number | null;
-    source: string | null;
-    confidence: "high" | "medium" | "low";
-  } | null;
-  location: {
-    city: string | null;
-    state: string | null;
-    country: string | null;
-    is_us_hq: boolean;
-    is_us_subsidiary: boolean;
-  } | null;
-  triggered_by: string[];
-  usage: AIUsage;
-}
-```
-
-**Merge Strategy:**
-- Deep research results are merged into Pass 1 results
-- Prioritizes deep research findings for conflicting data
-- Preserves original data if deep research has no new findings
+**Reads from context:** `ctx.pass1Result`, `ctx.domain`, `ctx.searchModel`, `ctx.forceDeepResearch`
+**Writes to context:** `ctx.outlierFlags`, `ctx.deepResearchResult`, modifies `ctx.pass1Result`
 
 ---
 
-### Stage 4: Smart URL Categorization & Scraping
+### Stage 5: URL Selection
+**File:** `pipeline/stages/url-selection.ts` (51 lines)
 
 **Purpose:** Intelligently select which URLs to scrape based on what data Pass 1 already found.
 
 **URL Tiers:**
+- **Tier 1 (Essential)** - Always scraped: company website, LinkedIn page
+- **Tier 2 (Data Aggregators)** - Conditionally: Crunchbase, ZoomInfo, Apollo, Growjo
+- **Tier 3 (Low Value)** - Never scraped: Wikipedia, Glassdoor, Indeed, news
 
-1. **Tier 1 (Essential)** - Always scraped
-   - Company website (domain itself)
-   - LinkedIn company page
-   - Official investor relations site
-
-2. **Tier 2 (Data Aggregators)** - Conditionally scraped
-   - Crunchbase
-   - ZoomInfo
-   - Apollo
-   - Hunter.io
-   - LinkedIn (if not already in Tier 1)
-
-3. **Tier 3 (Low Value)** - Never scraped
-   - Wikipedia
-   - Glassdoor
-   - Indeed
-   - News articles
-
-**Smart Selection Logic:**
-
+**Selection logic:**
 ```
-IF Pass 1 found both revenue AND employees:
-  → Scrape only Tier 1 (company site + LinkedIn)
-  → Skip Tier 2 (already have good data)
-
-ELSE IF Pass 1 found revenue OR employees (but not both):
-  → Scrape Tier 1 + 2 data aggregators (up to 2)
-  → Need to fill in missing data
-
-ELSE (missing both revenue and employees):
-  → Scrape Tier 1 + 4 data aggregators (up to 4)
-  → Need comprehensive data coverage
+Pass 1 found revenue AND employees → Tier 1 only (2 URLs)
+Pass 1 found one of them           → Tier 1 + 2 Tier 2 (up to 4 URLs)
+Pass 1 found neither               → Tier 1 + 4 Tier 2 (up to 6 URLs)
 ```
 
-**Scraping Tool:** Firecrawl API
-- Converts web pages to clean markdown
-- Tracks credits used per page
-- Returns structured content
+**Reads from context:** `ctx.pass1Result`, `ctx.domain`
+**Returns:** `urlsToScrape[]` (passed directly to stage 6, not stored on context)
 
 ---
 
-### Stage 5: Entity Mismatch Detection
+### Stage 6: Scraping
+**File:** `pipeline/stages/scraping.ts` (33 lines)
 
-**Purpose:** Detect if Pass 1 identified the wrong company.
-
-**Signals Checked:**
-1. Company name from Pass 1 not found in scraped website content
-2. Domain name IS found in content (suggests different company)
-3. Conflicting business descriptions
-
-**If Mismatch Detected:**
-1. Re-run Pass 1 in "strict mode" (more conservative)
-2. Merge results from both passes
-3. Re-scrape URLs with corrected company information
-4. Preserve original revenue/employee data (often more reliable)
-
----
-
-### Stage 6: LinkedIn Extraction & Validation
-
-**Purpose:** Extract and validate the company's LinkedIn profile URL.
-
-**Priority Order:**
-
-1. **Company Website** (Most Authoritative)
-   - Search scraped company website for LinkedIn link
-   - If found, use immediately (no validation needed)
-   - This is the official company-provided link
-
-2. **Pass 1 Results** (Needs Validation)
-   - Use LinkedIn URL from Perplexity search
-   - Validate against expected data:
-     - Employee count match
-     - Location match
-     - Business description match
-   - Reject if validation fails (likely wrong company)
-
-3. **Fallback: Search Scraped Content**
-   - Look for employee count patterns in data aggregators
-   - Extract from Crunchbase, ZoomInfo, etc.
-
-**Validation Process:**
-- Scrape LinkedIn page
-- Compare employee count with Pass 1 expectations
-- Compare location with Pass 1 headquarters
-- Verify company name matches
-- Reject if >20% mismatch
-
----
-
-### Stage 7: Pass 2 - Content Analysis (GPT-4o-mini)
-
-**Purpose:** Analyze all scraped content to extract structured company data.
-
-**Model:** OpenAI GPT-4o-mini (via AI Gateway)
-
-**Input:**
-- Scraped content from all selected URLs
-- Pass 1 results (for context)
-- Company name and domain
-
-**Key Responsibilities:**
-1. Extract business description (2-4 sentences, identify PRIMARY business activity)
-2. Determine HQ location (city, state, country)
-3. Identify if US HQ or US subsidiary
-4. Extract/validate LinkedIn URL
-5. Determine revenue band (from 12 predefined bands)
-6. Determine employee band (from 9 predefined bands)
-7. Select 2-3 NAICS codes (6-digit)
-8. Provide quality metrics for each field
-
-**Revenue Priority Hierarchy:**
-1. SEC filings / audited financials (highest authority)
-2. Investor relations / earnings releases
-3. Company press releases
-4. Reputable media (Forbes, Bloomberg, Reuters, WSJ)
-5. Wikipedia (as pointer only)
-6. Directory/estimate sites (Growjo, Owler, Zippia, ZoomInfo) (lowest)
-
-**Business Description Rules:**
-- Identify PRIMARY business activity (what they DO):
-  - Manufacturer: "manufacturer of [products]"
-  - Retailer: "retailer of [products]" or "operates [type] stores"
-  - Wholesaler/Distributor: "wholesaler of [products]" or "distributor of [products]"
-  - Food Service: "operates [type] restaurants" or "provides [type] food service"
-- Use "serving" or "targeting" for customer markets
-- Include specific products/services, target markets, key differentiators
-
-**Output (EnrichmentResult):**
-```typescript
-{
-  business_description: string;
-  city: string;
-  state: string | null;
-  hq_country: string;
-  is_us_hq: boolean;
-  is_us_subsidiary: boolean;
-  linkedin_url: string | null;
-  company_revenue: string | null;
-  company_size: string | null;
-  naics_codes_6_digit: NAICSCode[];
-  source_urls: string[];
-  quality: {
-    location: { confidence: "high" | "medium" | "low"; reasoning: string };
-    revenue: { confidence: "high" | "medium" | "low"; reasoning: string };
-    size: { confidence: "high" | "medium" | "low"; reasoning: string };
-    industry: { confidence: "high" | "medium" | "low"; reasoning: string };
-  };
-}
-```
-
----
-
-### Stage 8: Revenue & Size Estimation
-
-**Purpose:** Fill in missing revenue or employee data using intelligent estimation.
-
-**Estimation Hierarchy:**
-
-1. **Pass 1 Evidence** (Highest Priority)
-   - Use actual revenue figures found via web search
-   - Pick best evidence from multiple sources
-   - Confidence: High
-
-2. **Pass 2 Findings** (Second Priority)
-   - Use data extracted from scraped content
-   - Confidence: Medium
-
-3. **Revenue ↔ Size Correlation** (Third Priority)
-   - If have revenue but no employees: estimate employees from revenue + industry
-   - If have employees but no revenue: estimate revenue from employees + industry
-   - Confidence: Medium
-
-4. **Industry Averages** (Last Resort)
-   - Use NAICS code to find industry average revenue/size
-   - Only used if no other data available
-   - Confidence: Low
-
-**Sanity Checks:**
-- Validate revenue vs employee count consistency
-- Flag suspicious combinations (e.g., $1B revenue with 5 employees)
-- Adjust if mismatch detected
-
----
-
-### Stage 9: Parent Company Enrichment
-
-**Purpose:** Inherit data from parent company if child company has weak data.
-
-**Trigger Conditions:**
-
-Child company is considered "weak" if:
-- No revenue data found, OR
-- Revenue is below $10M threshold, OR
-- Company size is 0-50 employees
+**Purpose:** Scrape selected URLs using Firecrawl to get clean markdown content.
 
 **Process:**
+1. Call `scrapeMultipleUrlsWithCost()` with the selected URLs
+2. Store scraped content as a `Map<url, markdown>`
+3. Track Firecrawl credits and scrape count
 
-1. **Parent Company Detection**
-   - Pass 1 identifies parent company name
-   - Example: "Coca-Cola" is parent of "Sprite"
-
-2. **Parent Domain Guessing**
-   - Use known mapping of parent company names to domains
-   - Example: "General Mills" → "generalmills.com"
-   - Fallback: Generate domain from company name
-
-3. **Parent Lookup in Database**
-   - Check if parent company already enriched in database
-   - If found and has good data: inherit revenue/size
-
-4. **Data Inheritance**
-   - Inherit revenue if child has no passing revenue
-   - Inherit employee size if child has small/unknown size
-   - Mark as "inherited_revenue" and "inherited_size" flags
-   - Preserve parent company name and domain
-
-5. **ICP Recalculation**
-   - Recalculate target_icp with inherited data
-   - May now pass ICP criteria with parent's revenue
-
-**Known Parent Mappings:**
-- General Mills, Nestlé, Kraft Heinz, PepsiCo, Coca-Cola, Unilever, etc.
-- ~50+ major food & beverage companies mapped
-- Extensible for other industries
+**Reads from context:** `ctx.firecrawlApiKey`
+**Writes to context:** `ctx.scrapedContent`, `ctx.scrapeResult`, `ctx.costs`
 
 ---
 
-### Stage 10: Final Data Assembly & Cost Calculation
+### Stage 7: Entity Validation
+**File:** `pipeline/stages/entity-validation.ts` (68 lines)
 
-**Purpose:** Calculate costs, compile performance metrics, and assemble final response.
+**Purpose:** Detect if Pass 1 identified the wrong company (entity mismatch).
 
 **Process:**
+1. Call `detectEntityMismatch()` - checks if company name appears in scraped content
+2. If mismatch detected:
+   - Re-run Pass 1 in **strict mode** (`pass1_identifyUrlsStrict`)
+   - Merge revenue evidence from both original and strict passes
+   - Re-scrape with corrected URLs
+   - Preserve LinkedIn candidates, headquarters, and employee data from whichever pass has better data
 
-1. **Cost Breakdown Calculation**
-   ```
-   Total Cost = AI Cost + Firecrawl Cost
-
-   AI Cost = Pass 1 + Pass 2 + Deep Research (if triggered)
-
-   Firecrawl Cost = (Credits Used / 1000) * $0.10
-   ```
-
-2. **Performance Metrics**
-   - Pass 1 execution time (ms)
-   - Scraping execution time (ms)
-   - Pass 2 execution time (ms)
-   - Total execution time (ms)
-   - Average time per page scraped
-
-3. **Raw API Responses**
-   - Store domain resolution details
-   - Store Pass 1 raw response
-   - Store Pass 2 raw response
-   - Store Deep Research raw response (if triggered)
-
-4. **Final Result Assembly**
-   ```typescript
-   {
-     ...enrichmentResult,
-     cost: CostBreakdown,
-     performance: PerformanceMetrics,
-     raw_api_responses: RawApiResponses
-   }
-   ```
+**Reads from context:** `ctx.pass1Result`, `ctx.domain`, `ctx.scrapedContent`, `ctx.searchModel`
+**Writes to context:** May replace `ctx.pass1Result` and `ctx.scrapedContent` entirely
 
 ---
 
-### Stage 11: Database Storage
+### Stage 8: LinkedIn Validation
+**File:** `pipeline/stages/linkedin-validation.ts` (165 lines)
 
-**Purpose:** Save enriched data to database for caching and analytics.
+**Purpose:** Extract the company's LinkedIn URL from scraped content and validate it.
+
+**LinkedIn URL priority:**
+1. **Company website** (most authoritative) - search scraped company site for LinkedIn links
+2. **Direct scrape** - if no pages scraped, try scraping `https://{domain}` directly
+3. **Pass 1 candidates** - use `linkedin_url_candidates[0]` (highest confidence)
+4. **Pass 1 urls_to_crawl** - last resort, check if any URL is a LinkedIn company page
+
+**Validation (for both Pass 1 and website sources):**
+- Call `validateLinkedInPage()` - scrapes the LinkedIn page
+- Compares employee count and location against Pass 1 expectations
+- Rejects if >20% mismatch (likely wrong company or parent company page)
+
+**Employee count extraction:**
+- If LinkedIn validation finds employee count, store it
+- If not, search all scraped content for `X employees` patterns
+
+**Reads from context:** `ctx.pass1Result`, `ctx.domain`, `ctx.scrapedContent`, `ctx.firecrawlApiKey`
+**Writes to context:** `ctx.linkedinUrl`, `ctx.linkedinSource`, `ctx.linkedinEmployeeCount`
+
+---
+
+### Stage 9: Pass 2 Analysis
+**File:** `pipeline/stages/pass2-analysis.ts` (37 lines)
+
+**Purpose:** Analyze all scraped content using GPT-4o-mini to extract structured data.
 
 **Process:**
+1. Call `pass2_analyzeContentWithUsage()` with scraped content + Pass 1 context
+2. GPT extracts: business description, location, revenue band, employee band, NAICS codes, quality metrics, ICP matching
 
-1. **companies table**
-   - Stores enriched company data
-   - Indexed by domain (primary key)
-   - Includes all extracted fields
-   - Tracks last_enriched_at timestamp
+**Reads from context:** `ctx.enrichmentDomain`, `ctx.pass1Result`, `ctx.scrapedContent`, `ctx.analysisModel`, `ctx.domain`
+**Writes to context:** `ctx.pass2Result`, `ctx.pass2RawResponse`, `ctx.costs.pass2Usage`
 
-2. **enrichment_requests table**
-   - Logs all enrichment requests
-   - Tracks cost, response time, cache status
-   - Stores raw API responses for debugging
-   - Indexed by hs_company_id and domain
+---
 
-**Upsert Logic:**
-- If company exists: update with new data
-- Preserve inherited revenue/size if new data is worse
-- Maintain parent company relationships
+### Stage 10: Data Estimation
+**File:** `pipeline/stages/data-estimation.ts` (182 lines) - the largest stage
+
+**Purpose:** Fill missing revenue/size data, apply LinkedIn data, run sanity checks, recalculate ICP.
+
+**Process (in order):**
+
+1. **Diagnostics** - Add deep research info and domain verification to `result.diagnostics`
+
+2. **LinkedIn URL override** - Replace Pass 2 LinkedIn with our validated LinkedIn (more reliable)
+
+3. **LinkedIn employee count** - If Pass 2 has unknown size but LinkedIn had employees, use LinkedIn
+
+4. **Revenue estimation hierarchy:**
+   - Pass 1 evidence (actual figures from web search) → `pickRevenueBandFromEvidence()`
+   - Pass 2 extracted revenue (from scraped content)
+   - Employee-based estimate → `estimateRevenueBandFromEmployeesAndNaics()`
+   - Industry averages → `estimateFromIndustryAverages()`
+
+5. **Size estimation hierarchy:**
+   - LinkedIn employee count (high confidence)
+   - Revenue-based estimate → `estimateEmployeeBandFromRevenue()`
+   - Industry averages (low confidence)
+
+6. **Sanity check** - `validateRevenueVsEmployees()` adjusts if inconsistent
+
+7. **ICP recalculation** - Recalculate `revenue_pass` and `target_icp` with final numbers
+
+**Reads from context:** `ctx.pass1Result`, `ctx.pass2Result`, `ctx.linkedinUrl`, `ctx.linkedinEmployeeCount`, `ctx.deepResearchResult`, `ctx.outlierFlags`, `ctx.domainResolution`, `ctx.forceDeepResearch`
+**Writes to context:** Modifies `ctx.pass2Result` in place (revenue, size, quality, diagnostics, ICP)
+
+---
+
+### Stage 11: Parent Enrichment
+**File:** `pipeline/stages/parent-enrichment.ts` (99 lines)
+
+**Purpose:** Inherit revenue/size from parent company when the child company has weak data.
+
+**Condition:** Runs if Pass 1 detected a parent company AND child has weak data:
+- No revenue, or revenue below $10M passing threshold
+- Size is unknown or ≤50 employees
+
+**Process:**
+1. Call `guessParentDomain()` to map parent name to domain (uses `KNOWN_PARENT_DOMAINS` map of ~55 major companies, plus heuristic guessing)
+2. Look up parent in database via `getCompanyByDomain()`
+3. If parent found with good data:
+   - Inherit revenue (mark `inherited_revenue = true`)
+   - Inherit size if child is small (mark `inherited_size = true`)
+   - Set `parent_company_name` and `parent_company_domain`
+   - Recalculate ICP with inherited data
+
+**Reads from context:** `ctx.pass1Result`, `ctx.pass2Result`
+**Writes to context:** Modifies `ctx.pass2Result` (revenue, size, quality, ICP, parent fields)
+
+---
+
+### Stage 12: Final Assembly
+**File:** `pipeline/stages/final-assembly.ts` (97 lines)
+
+**Purpose:** Calculate final costs, compile performance metrics, assemble the response.
+
+**Process:**
+1. **Cost breakdown:**
+   ```
+   AI Cost     = Pass 1 + Pass 2 + Deep Research (if triggered)
+   Firecrawl   = credits × $0.0001
+   Total       = AI Cost + Firecrawl
+   ```
+
+2. **Performance metrics:** `pass1_ms`, `scraping_ms`, `pass2_ms`, `total_ms`, `scrape_count`, `avg_scrape_ms`
+
+3. **Raw API responses:** Domain resolution, Pass 1, Pass 2, Deep Research (for debugging)
+
+4. **Console logging:** Prints cost breakdown and timing summary
+
+**Reads from context:** `ctx.costs`, `ctx.timing`, `ctx.pass2Result`, `ctx.deepResearchResult`, `ctx.domainResolution`, `ctx.pass1RawResponse`, `ctx.pass2RawResponse`
+**Returns:** `EnrichmentResultWithCost` (the final response object)
 
 ---
 
@@ -591,54 +648,12 @@ Child company is considered "weak" if:
 
 ### Workflow:
 
-1. **Cache Check**
-   - Query database for existing contact by email
-   - If found: return cached data immediately
-   - Response time: <10ms
-
-2. **ZoomInfo Authentication**
-   - Check for cached JWT token (valid for 24 hours)
-   - If expired: authenticate with ZoomInfo API
-   - Cache token for 23.5 hours (refresh 30min early)
-
-3. **ZoomInfo Enrichment API Call**
-   - Build request with email and optional fields
-   - Send to ZoomInfo Enrich API
-   - Receive enriched contact data
-
-4. **Response Processing**
-   - Check match status (MATCH, CONFIDENT_MATCH, FULL_MATCH)
-   - Extract contact data fields:
-     - First name, last name
-     - Phone, mobile phone, direct phone
-     - Job title, management level
-     - Company name, company website
-     - City, state, country
-     - LinkedIn URL (from externalUrls array)
-
-5. **Database Storage**
-   - Upsert contact record by email or HubSpot ID
-   - Store enriched data
-   - Link to company if hs_company_id provided
-
-6. **Response**
-   ```json
-   {
-     "success": true,
-     "data": {
-       "email_address": "john@example.com",
-       "first_name": "John",
-       "last_name": "Doe",
-       "job_title": "CEO",
-       "direct_phone": "+1-555-0123",
-       "cell_phone": "+1-555-0456",
-       "linked_profile_url": "https://linkedin.com/in/johndoe"
-     },
-     "was_cached": false,
-     "credits_used": 1,
-     "response_time_ms": 1234
-   }
-   ```
+1. **Cache Check** - Query database for existing contact by email (<10ms)
+2. **ZoomInfo Authentication** - Check cached JWT token (23.5-hour cache)
+3. **ZoomInfo Enrichment API** - Send email + optional fields, receive enriched data
+4. **Response Processing** - Extract name, phones, title, LinkedIn URL, location
+5. **Database Storage** - Upsert contact record
+6. **Response** - Return enriched contact with `was_cached`, `credits_used`, `response_time_ms`
 
 ---
 
@@ -646,104 +661,58 @@ Child company is considered "weak" if:
 
 ### Cost Components
 
-**1. AI Costs (via AI Gateway)**
-
-Pass 1 (Perplexity Sonar Pro):
-- Input tokens: ~500-1000 per request
-- Output tokens: ~1000-2000 per request
-- Cost: ~$0.01-0.03 per request
-
-Pass 2 (OpenAI GPT-4o-mini):
-- Input tokens: ~2000-5000 (includes scraped content)
-- Output tokens: ~500-1000 per request
-- Cost: ~$0.01-0.02 per request
-
-Deep Research (Perplexity, if triggered):
-- Input tokens: ~500-1000 per query
-- Output tokens: ~500-1000 per query
-- Cost: ~$0.01-0.02 per query
-- Typically 1-3 queries if triggered
-
-**2. Firecrawl Costs**
-
-- Base rate: $0.10 per 1000 credits
-- Typical page scrape: 1-5 credits per page
-- Typical enrichment: 5-20 pages scraped
-- Cost per enrichment: ~$0.01-0.20
-
-**3. Total Cost Estimate**
-
-Typical enrichment: **$0.03-0.08 per company**
-- Cached hit: $0.00
-- With deep research: +$0.01-0.02
-- With heavy scraping: +$0.05-0.10
+| Component | Typical Cost | Notes |
+|-----------|-------------|-------|
+| Pass 1 (Perplexity) | $0.01-0.03 | ~1500-2500 tokens |
+| Pass 2 (GPT-4o-mini) | $0.001-0.003 | ~3000-5000 input tokens |
+| Deep Research | $0.01-0.02 | Only when triggered |
+| Firecrawl | $0.01-0.30 | 1-6 pages × 1-5 credits each |
+| **Total fresh** | **$0.02-0.04** | Typical enrichment |
+| **Cached hit** | **$0.00** | Database lookup only |
 
 ### Cost Optimization Strategies
 
-1. **Caching**
-   - Database cache check before any API calls
-   - `force_refresh` parameter to bypass cache
-   - Tracks cached vs. fresh requests
-
-2. **Smart Scraping**
-   - Conditional Tier 2 scraping based on Pass 1 results
-   - Skips Tier 3 entirely (low value)
-   - Reduces Firecrawl credits by 50-70%
-
-3. **Deep Research Triggers**
-   - Only runs when outliers detected
-   - Parallel queries to minimize token usage
-   - Saves ~$0.02-0.05 per enrichment when not needed
+1. **Caching** - Database check before any API calls
+2. **Smart scraping** - Conditional Tier 2 based on Pass 1 results (saves 50-70% Firecrawl credits)
+3. **Deep research triggers** - Only when outliers detected (saves ~$0.02/enrichment)
+4. **CostAccumulator** - Central tracking prevents double-counting across stages
 
 ---
 
 ## Quality Assurance Mechanisms
 
-### Entity Mismatch Detection
+### Entity Mismatch Detection (Stage 7)
 - Checks if Pass 1 company name appears in scraped content
-- If mismatch detected, re-runs Pass 1 in strict mode
-- Merges revenue evidence from both passes
+- If mismatch: re-runs Pass 1 in strict mode, merges evidence from both passes
 
-### LinkedIn Validation
+### LinkedIn Validation (Stage 8)
 - Validates LinkedIn URL against expected employees/location
-- Rejects if validation fails (likely wrong company)
-- Only validates URLs from Pass 1 (website links are authoritative)
+- Rejects if >20% mismatch (wrong company or parent page)
+- Validates URLs from both website and Pass 1 sources
 
-### Revenue Validation
-- Validates revenue vs. employee count consistency
+### Revenue Validation (Stage 10)
+- `validateRevenueVsEmployees()` checks revenue vs employee count consistency
 - Applies industry-specific ratios
 - Adjusts revenue band if mismatch detected
 
 ### Quality Metrics
-- Confidence levels (high/medium/low) for each field
-- Reasoning for each data point
-- Source tracking for all extracted data
+- Every field gets confidence level (high/medium/low) + reasoning
+- Diagnostics track: revenue sources found, deep research triggers, domain verification, revenue adjustments
 
 ---
 
 ## External Integrations
 
-### Perplexity Sonar Pro
-- Model: `perplexity/sonar-pro`
-- Used in: Pass 1, Deep Research
-- Cost: ~$0.003 per 1K input tokens, ~$0.01 per 1K output tokens
-- Purpose: Web search with real-time internet access
+| Service | Model/API | Used In | Purpose |
+|---------|-----------|---------|---------|
+| Perplexity | `perplexity/sonar-pro` | Stages 2, 4 | Web search with real-time internet |
+| OpenAI | `openai/gpt-4o-mini` | Stage 9 | Content analysis and extraction |
+| Gemini | `google/gemini-2.0-flash-exp` | Stage 3 | Fallback LinkedIn search |
+| Firecrawl | REST API | Stages 1, 3, 6 | Web scraping + Google search |
+| Supabase | PostgreSQL | Stage 11 (parent), DB save | Data storage |
+| ZoomInfo | REST API | Contact enrichment | Contact data |
 
-### OpenAI GPT-4o-mini
-- Model: `openai/gpt-4o-mini`
-- Used in: Pass 2
-- Cost: ~$0.00015 per 1K input tokens, ~$0.0006 per 1K output tokens
-- Purpose: Content analysis and data extraction
-
-### Firecrawl
-- Purpose: Extract text content from websites
-- Features: Handles JavaScript-rendered content, extracts clean text
-- Cost Model: $0.10 per 1000 credits
-
-### ZoomInfo
-- Used in: `/enrich/contact` endpoint
-- Credentials: ZI_USERNAME, ZI_PASSWORD, ZI_AUTH_URL, ZI_ENRICH_URL
-- Returns: Contact details, company info, job title validation
+All AI models accessed via `@ai-sdk/gateway` (single `gateway(modelId)` call).
 
 ---
 
@@ -753,92 +722,55 @@ Typical enrichment: **$0.03-0.08 per company**
 
 | Stage | Time (ms) | Notes |
 |-------|-----------|-------|
-| Domain Resolution | 500-1000 | Only if domain dead |
-| Pass 1 (Web Search) | 1000-2000 | Perplexity API call |
-| Deep Research | 1000-3000 | Only if triggered |
-| URL Scraping | 2000-5000 | Depends on # of pages |
-| Pass 2 (Analysis) | 2000-4000 | GPT-4o-mini API call |
-| Database Save | 100-500 | Supabase upsert |
-| **Total** | **7000-15000** | ~7-15 seconds typical |
+| Domain Resolution | 500-1,000 | Firecrawl search |
+| Pass 1 (Web Search) | 1,000-4,000 | Perplexity API |
+| LinkedIn Search | 1,000-3,000 | Only if Pass 1 found nothing |
+| Deep Research | 1,000-3,000 | Only if triggered |
+| URL Selection | <1 | Pure logic |
+| Scraping | 500-5,000 | Depends on page count |
+| Entity Validation | 0-5,000 | 0 if no mismatch; 5s if re-run |
+| LinkedIn Validation | 500-2,000 | Scrapes + validates LinkedIn page |
+| Pass 2 (Analysis) | 2,000-5,000 | GPT-4o-mini API |
+| Data Estimation | <1 | Pure logic |
+| Parent Enrichment | 0-100 | DB lookup only |
+| Final Assembly | <1 | Pure logic |
+| **Total** | **10,000-25,000** | ~10-25 seconds typical |
 
 ### Cached Hit Performance
 - Database lookup: ~10-50ms
 - Response: <100ms total
+- Cost: $0.00
 
-### Cost Efficiency
-- Cached hit: $0.00
-- Fresh enrichment: $0.03-0.08
-- With deep research: +$0.01-0.02
-- Break-even: ~50 requests before cache pays for itself
+### Test Results (10 companies, Feb 2026)
 
----
+| Domain | Cost | Time | All stages |
+|--------|------|------|-----------|
+| fijiwater.com | $0.023 | 16.3s | Pass |
+| medfinefoods.com | $0.029 | 166.6s | Pass (retries) |
+| bwfoods.com | $0.016 | 13.4s | Pass |
+| universalyums.com | $0.022 | 15.0s | Pass |
+| capitalcityfruit.com | $0.019 | 14.6s | Pass |
+| bstseafood.com | $0.018 | 21.7s | Pass |
+| ccclark.com | $0.017 | 13.8s | Pass |
+| bydsa.com | $0.013 | 16.7s | Pass |
+| bartlettny.com | $0.019 | 20.8s | Pass |
+| flashfoods.com | $0.014 | 13.0s | Pass |
 
-## Data Flow Diagram
-
-```
-INPUT: domain
-  ↓
-[Stage 0] Normalize & Cache Check
-  ├─ Return cached? → RESPONSE
-  └─ Continue? ↓
-[Stage 1] Domain Resolution
-  ├─ Firecrawl search if domain dead
-  └─ resolved_domain ↓
-[Stage 2] Pass 1: Web Search
-  ├─ Perplexity: company name, revenue, employees, HQ, URLs
-  └─ Pass1Result ↓
-[Stage 3] Deep Research (if outliers detected)
-  ├─ Perplexity: focused searches for missing/conflicting data
-  └─ Merge into Pass1Result ↓
-[Stage 4] URL Categorization & Smart Selection
-  ├─ Tier 1: Always (company site, LinkedIn)
-  ├─ Tier 2: Conditional (data aggregators)
-  └─ Tier 3: Never (Wikipedia, Glassdoor) ↓
-[Stage 5] Firecrawl Scraping
-  ├─ Scrape selected URLs
-  └─ scrapedContent ↓
-[Stage 6] Entity Mismatch Detection
-  ├─ Company name in content?
-  ├─ If no: Re-run Pass 1 strict mode
-  └─ Continue ↓
-[Stage 7] LinkedIn Extraction & Validation
-  ├─ Find LinkedIn on company website (authoritative)
-  ├─ Validate LinkedIn from Pass 1 (if needed)
-  └─ linkedinUrl ↓
-[Stage 8] Pass 2: Content Analysis
-  ├─ GPT-4o-mini: business description, location, revenue, size, NAICS, ICP
-  └─ EnrichmentResult ↓
-[Stage 9] Revenue & Size Estimation
-  ├─ Fill missing data using hierarchy
-  ├─ Sanity check revenue vs size
-  └─ Adjusted result ↓
-[Stage 10] Parent Company Enrichment
-  ├─ Detect parent company
-  ├─ Lookup parent in DB
-  ├─ Inherit revenue/size if child weak
-  └─ Final result ↓
-[Stage 11] Cost Calculation & Assembly
-  ├─ Calculate AI + Firecrawl costs
-  ├─ Compile performance metrics
-  └─ Final result with costs ↓
-[Stage 12] Database Storage
-  ├─ Upsert companies table
-  ├─ Insert enrichment_requests log
-  └─ Return response
-```
+Average: **$0.019/enrichment**, **~17s** (excluding outlier)
 
 ---
 
 ## Summary
 
-The Benriched enrichment system is a sophisticated multi-stage pipeline that:
+The Benriched enrichment system is a modular 12-stage pipeline that:
 
-1. **Searches the web** (Pass 1) to identify companies and find initial data
-2. **Intelligently scrapes** selected URLs based on what data is already found
-3. **Analyzes content** (Pass 2) to extract structured company information
-4. **Validates and enriches** data through deep research, entity detection, and parent company inheritance
-5. **Tracks costs** transparently for every API call
-6. **Caches results** to avoid redundant enrichments
-7. **Stores everything** in a database for future reference
+1. **Resolves domains** and searches the web (Stages 1-3)
+2. **Deep dives** into outliers and conflicts (Stage 4)
+3. **Intelligently scrapes** selected URLs to minimize cost (Stages 5-6)
+4. **Validates** entity identity and LinkedIn accuracy (Stages 7-8)
+5. **Analyzes content** with GPT-4o-mini (Stage 9)
+6. **Fills gaps** using estimation hierarchies and sanity checks (Stage 10)
+7. **Inherits parent data** for weak subsidiaries/brands (Stage 11)
+8. **Assembles costs** and returns the final result (Stage 12)
 
-The system balances **accuracy** (multiple validation stages), **cost efficiency** (smart URL selection, caching), and **speed** (parallel API calls, intelligent fallbacks).
+Each stage is isolated in its own file, reads/writes a shared `EnrichmentContext`, and can be debugged or tested independently. The orchestrator shows the full pipeline flow in 12 lines.

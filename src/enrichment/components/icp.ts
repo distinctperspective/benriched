@@ -101,6 +101,22 @@ export function isInTargetRegion(hqCountry: string | null, isUsHq: boolean, isUs
   return (hqCountry !== null && TARGET_REGIONS.has(hqCountry)) || isUsHq || isUsSubsidiary;
 }
 
+// Recalculate revenue_pass and target_icp on an enrichment result (synchronous, no DB call)
+// Uses pre-computed target_icp_matches instead of loading NAICS from DB
+export function recalculateIcp(result: {
+  company_revenue?: string | null;
+  hq_country: string;
+  is_us_hq: boolean;
+  is_us_subsidiary: boolean;
+  target_icp_matches?: Array<{ code: string }> | null;
+  revenue_pass?: boolean;
+  target_icp?: boolean;
+}): void {
+  result.revenue_pass = isPassingRevenue(result.company_revenue ?? null);
+  const inRegion = isInTargetRegion(result.hq_country, result.is_us_hq, result.is_us_subsidiary);
+  result.target_icp = (result.target_icp_matches?.length ?? 0) > 0 && inRegion && (result.revenue_pass ?? false);
+}
+
 // Calculate full ICP status
 export async function calculateTargetIcp(
   naicsCodes: Array<{ code: string }>,
