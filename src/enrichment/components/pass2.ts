@@ -418,6 +418,44 @@ export async function pass2_analyzeContentWithUsage(
     
     return { result, usage: aiUsage, rawResponse: text };
   } catch {
+    console.warn(`   ⚠️  Pass 2 JSON parse failed - attempting partial extraction and Pass 1 fallback`);
+
+    // Try to extract fields from truncated/malformed JSON using regex
+    const extractField = (fieldName: string): string | null => {
+      const regex = new RegExp(`"${fieldName}"\\s*:\\s*"([^"]*)"`, 'i');
+      const match = text.match(regex);
+      return match ? match[1] : null;
+    };
+    const extractBool = (fieldName: string): boolean | null => {
+      const regex = new RegExp(`"${fieldName}"\\s*:\\s*(true|false)`, 'i');
+      const match = text.match(regex);
+      return match ? match[1] === 'true' : null;
+    };
+
+    // Salvage what we can from the corrupted response
+    const partialCity = extractField('city');
+    const partialState = extractField('state');
+    const partialCountry = extractField('hq_country');
+    const partialDescription = extractField('business_description');
+    const partialIsUsHq = extractBool('is_us_hq');
+    const partialIsUsSub = extractBool('is_us_subsidiary');
+
+    // Use Pass 1 data for location when available
+    const pass1City = pass1Data?.headquarters?.city;
+    const pass1State = pass1Data?.headquarters?.state;
+    const pass1Country = pass1Data?.headquarters?.country_code;
+    const pass1HasValidCity = pass1City && pass1City.toLowerCase() !== 'unknown';
+    const pass1HasValidState = pass1State && pass1State.toLowerCase() !== 'unknown';
+    const pass1HasValidCountry = pass1Country && pass1Country.toLowerCase() !== 'unknown';
+
+    const fallbackCity = (pass1HasValidCity ? pass1City : null) || (partialCity && partialCity.toLowerCase() !== 'unknown' ? partialCity : null) || 'unknown';
+    const fallbackState = (pass1HasValidState ? pass1State : null) || (partialState && partialState.toLowerCase() !== 'unknown' ? partialState : null) || null;
+    const fallbackCountry = (pass1HasValidCountry ? pass1Country : null) || (partialCountry ? countryNameToCode(partialCountry) : null) || 'unknown';
+
+    if (fallbackCity !== 'unknown') {
+      console.log(`   ✅ Recovered location from ${pass1HasValidCity ? 'Pass 1' : 'partial extraction'}: ${fallbackCity}, ${fallbackState || ''} ${fallbackCountry}`);
+    }
+
     // Fallback: use Pass 1 canonical website if available, otherwise use input domain
     let finalWebsite: string;
     let finalDomain: string;
@@ -440,19 +478,24 @@ export async function pass2_analyzeContentWithUsage(
         website: finalWebsite,
         domain: finalDomain,
         linkedin_url: null,
-        business_description: 'unknown',
+        business_description: partialDescription || 'unknown',
         company_size: 'unknown',
         company_revenue: null,
         naics_codes_6_digit: [],
         naics_codes_csv: '',
-        city: 'unknown',
-        state: null,
-        hq_country: 'unknown',
-        is_us_hq: false,
-        is_us_subsidiary: false,
+        city: fallbackCity!,
+        state: fallbackState,
+        hq_country: fallbackCountry!,
+        is_us_hq: partialIsUsHq ?? (fallbackCountry === 'US'),
+        is_us_subsidiary: partialIsUsSub ?? false,
         source_urls: [],
         quality: {
-          location: { confidence: 'low', reasoning: 'Could not parse structured response' },
+          location: {
+            confidence: fallbackCity !== 'unknown' ? 'medium' : 'low',
+            reasoning: fallbackCity !== 'unknown'
+              ? `Recovered from ${pass1HasValidCity ? 'Pass 1 web search' : 'partial Pass 2 extraction'} after JSON parse failure`
+              : 'Could not parse structured response and no Pass 1 location data available'
+          },
           revenue: { confidence: 'low', reasoning: 'Could not parse structured response' },
           size: { confidence: 'low', reasoning: 'Could not parse structured response' },
           industry: { confidence: 'low', reasoning: 'Could not parse structured response' }
