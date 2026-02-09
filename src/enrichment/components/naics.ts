@@ -104,7 +104,7 @@ function retrieveCandidateNAICS(
     },
     'technology_software': {
       prefixes: ['518', '519', '5415'], // Computing, Information Services, Computer Services
-      keywords: ['software', 'mobile app', 'platform', 'saas', 'marketplace', 'digital platform', 'online platform', 'web-based', 'cloud-based', 'technology company', 'tech company', 'app that connects']
+      keywords: ['software', 'mobile app', 'platform', 'saas', 'marketplace', 'digital marketplace', 'online platform', 'web-based', 'cloud-based', 'technology company', 'tech company', 'app that connects', 'e-commerce', 'ecommerce', 'online service', 'web portal', 'connects consumers', 'digital service']
     }
   };
 
