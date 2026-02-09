@@ -119,12 +119,12 @@ export async function pass1_identifyUrlsWithUsage(
         : providedCountry
           ? ` in ${providedCountry}`
           : '';
-    searchQuery = `Find annual revenue and employee count for "${providedCompanyName}"${locationPart}.
+    searchQuery = `Find the headquarters location, annual revenue, and employee count for "${providedCompanyName}"${locationPart}.
 
 **IMPORTANT**: The company name is "${providedCompanyName}". The domain "${domain}" may be an email domain that doesn't have a website. Focus your search on the company NAME, not the domain.`;
   } else {
     // No company name provided - search by domain (current behavior)
-    searchQuery = `Find annual revenue and employee count for the company at ${domain}.`;
+    searchQuery = `Find the headquarters location, annual revenue, and employee count for the company at ${domain}.`;
   }
 
   // Note: Perplexity may not support response_format yet
@@ -147,6 +147,28 @@ STRATEGY:
 3. ALWAYS label which scope each number belongs to
 4. **CRITICAL**: Headquarters location should ALWAYS be for the operating company at this domain, NOT the parent company
    - Example: cinnabongreece.com → HQ is Athens, Greece (NOT Atlanta, USA where Cinnabon parent is located)
+
+#HEADQUARTERS (REQUIRED)#
+
+**IMPORTANT**: Actively search for the company's physical headquarters location. Do NOT return "Unknown" without exhausting these sources:
+
+Search ALL of these for city/state/country:
+1. **Company website** - Check Contact Us, About Us, and footer sections (even on Wix/Squarespace sites that may not render fully, search snippets often contain address info)
+2. **Google Maps / Google Business** - Search "[Company Name] address" or "[Company Name] location"
+3. **Social media bios** - Instagram, Facebook, Twitter/X bios often list city/state (e.g., "New Bedford, MA")
+4. **Business directories** - Dun & Bradstreet, BBB, Manta, Yelp, Yellow Pages
+5. **State business registrations** - Secretary of State filings often list registered agent address
+6. **ZoomInfo, Crunchbase, Growjo** - Company profiles typically include HQ location
+7. **LinkedIn company page** - Location field in company profile
+8. **Job postings** - Indeed/Glassdoor job listings for the company often show office location
+
+For SMALL companies especially, the website Contact Us page and social media bios are often the ONLY source of location data. Prioritize these.
+
+Return the headquarters of THIS SPECIFIC ENTITY (not the parent company):
+- city: City name (REQUIRED - search harder if not immediately found)
+- state: Full state name for US companies (e.g., "Massachusetts"), region for non-US
+- country: Full country name
+- country_code: 2-letter ISO code (e.g., "US", "CA", "GR")
 
 #REVENUE COLLECTION (BE AGGRESSIVE)#
 
