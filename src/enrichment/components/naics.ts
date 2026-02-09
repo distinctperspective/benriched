@@ -22,16 +22,19 @@ async function loadApprovedNaicsCodes(): Promise<void> {
   
   if (error) {
     console.error('Error loading NAICS codes:', error);
-    approvedNaicsCodes = [];
-  } else if (data) {
+    // Don't cache failed loads - retry on next call
+    return;
+  } else if (data && data.length > 0) {
     approvedNaicsCodes = data.map(n => ({
       code: n.naics_code,
       description: n.naics_industry_title
     }));
     console.log(`✅ Loaded ${approvedNaicsCodes.length} approved NAICS codes for validation`);
+    naicsCodesLoaded = true;
+  } else {
+    console.error('NAICS codes query returned empty data');
+    // Don't cache empty results - retry on next call
   }
-  
-  naicsCodesLoaded = true;
 }
 
 /**
@@ -219,6 +222,24 @@ Business Description: {{BUSINESS_DESCRIPTION}}
 
 **YOUR TASK**: Extract what the company PRODUCES/DOES (ignore customers/markets), then match to NAICS codes.
 Return ONLY valid JSON array.`;
+
+/**
+ * Validate NAICS codes against the approved list.
+ * Used as a fallback when selectNAICSCodes returns empty.
+ */
+export async function validateNAICSCodesAgainstApproved(
+  codes: Array<{ code: string; description: string }>
+): Promise<NAICSCode[]> {
+  await loadApprovedNaicsCodes();
+  const validated: NAICSCode[] = [];
+  for (const item of codes) {
+    const approved = approvedNaicsCodes.find(n => n.code === item.code);
+    if (approved) {
+      validated.push({ code: approved.code, description: approved.description });
+    }
+  }
+  return validated;
+}
 
 export interface NAICSSelectionResult {
   naicsCodes: NAICSCode[];

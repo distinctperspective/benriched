@@ -4,7 +4,7 @@ import { countryNameToCode } from '../../utils/parsing.js';
 import { calculateAICost } from './pricing.js';
 import { PASS2_PROMPT } from './prompts.js';
 import { VALID_REVENUE_BANDS, PASSING_REVENUE_BANDS, TARGET_REGIONS, normalizeSizeBand, VALID_SIZE_BANDS, getMatchingNaics } from './icp.js';
-import { selectNAICSCodes } from './naics.js';
+import { selectNAICSCodes, validateNAICSCodesAgainstApproved } from './naics.js';
 
 export interface Pass2WithUsage {
   result: EnrichmentResult;
@@ -196,8 +196,21 @@ export async function pass2_analyzeContentWithUsage(
       modelId
     );
     
-    const naicsCodes = naicsResult.naicsCodes;
-    
+    let naicsCodes = naicsResult.naicsCodes;
+
+    // Fallback: if NAICS selection returned empty, use pass2's own suggestions (validated against approved list)
+    if (naicsCodes.length === 0 && Array.isArray(parsed.naics_codes_6_digit) && parsed.naics_codes_6_digit.length > 0) {
+      console.log(`   ⚠️  NAICS selection returned empty, falling back to pass2 suggestions`);
+      const fallbackCodes = await validateNAICSCodesAgainstApproved(parsed.naics_codes_6_digit);
+      if (fallbackCodes.length > 0) {
+        naicsCodes = fallbackCodes;
+        console.log(`   ✅ Pass2 fallback recovered ${fallbackCodes.length} valid codes`);
+        fallbackCodes.forEach(c => console.log(`      - ${c.code}: ${c.description}`));
+      } else {
+        console.log(`   ❌ Pass2 fallback: no valid codes from pass2 suggestions either`);
+      }
+    }
+
     // Update AI usage to include NAICS selection cost
     aiUsage.costUsd += naicsResult.costUsd;
     
