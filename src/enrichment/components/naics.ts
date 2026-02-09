@@ -101,6 +101,10 @@ function retrieveCandidateNAICS(
     'auto_repair': {
       prefixes: ['811'], // Repair & Maintenance
       keywords: ['auto repair', 'collision', 'automotive repair', 'mechanic', 'body shop']
+    },
+    'technology_software': {
+      prefixes: ['518', '519', '5415'], // Computing, Information Services, Computer Services
+      keywords: ['software', 'mobile app', 'platform', 'saas', 'marketplace', 'digital platform', 'online platform', 'web-based', 'cloud-based', 'technology company', 'tech company', 'app that connects']
     }
   };
 
@@ -322,8 +326,9 @@ export async function selectNAICSCodes(
         reason: 'company is a manufacturer, not a wholesaler'
       },
       {
-        // If description says "packaging" or "container", block food manufacturing codes
-        pattern: /\b(packaging|container|box|bag|wrapper|bottle)\b/i,
+        // If company MAKES packaging/containers as primary business, block food manufacturing codes
+        // But NOT if they're a food/beverage company that just mentions packaging (e.g., "fun packaging")
+        pattern: /\b(packaging manufactur|manufactur.*packaging|packaging company|packaging products|produces? packaging|packaging supplier|packaging solution provider)\b/i,
         blockedPrefixes: ['3119'], // Food manufacturing (311xxx)
         reason: 'company makes packaging, not food products'
       },
