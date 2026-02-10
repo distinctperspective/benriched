@@ -9,6 +9,7 @@ import { researchContact } from '../src/lib/research.js';
 import { searchAndEnrichContacts, ContactSearchRequest } from '../src/lib/contact-search.js';
 import { searchIcpCompanies, CompanySearchRequest } from '../src/lib/company-search.js';
 import { enrichContactByZoomInfoId, ContactEnrichByIdRequest } from '../src/lib/contact-enrich.js';
+import { searchPersonByName, PersonSearchRequest } from '../src/lib/contact-person-search.js';
 import {
   addExclusionKeyword,
   addExclusionKeywords,
@@ -212,6 +213,73 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(500).json({
         success: false,
         error: error instanceof Error ? error.message : 'Unknown error occurred'
+      });
+    }
+  }
+
+  // Person-specific contact search (search by name, not company)
+  if (req.url?.includes('/search/contact') && !req.url?.includes('/search/contacts')) {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method not allowed. Use POST.' });
+    }
+
+    // Auth check
+    const authHeader = req.headers.authorization;
+    const xApiKey = req.headers['x-api-key'] as string;
+    const queryApiKey = req.query?.api_key as string;
+    const bodyApiKey = req.body?.api_key as string;
+    const apiKey = process.env.API_KEY || 'amlink21';
+
+    const isAuthorized =
+      authHeader === `Bearer ${apiKey}` ||
+      xApiKey === apiKey ||
+      queryApiKey === apiKey ||
+      bodyApiKey === apiKey;
+
+    if (!isAuthorized) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        hint: 'Include api_key in body, query, X-API-Key header, or Authorization: Bearer <key>',
+      });
+    }
+
+    const body = req.body as PersonSearchRequest & { api_key?: string };
+
+    if (!body.first_name || !body.last_name) {
+      return res.status(400).json({ error: 'Missing required fields: first_name and last_name' });
+    }
+
+    const requestStartTime = Date.now();
+
+    try {
+      const ziUsername = process.env.ZI_USERNAME;
+      const ziPassword = process.env.ZI_PASSWORD;
+      const ziAuthUrl = process.env.ZI_AUTH_URL;
+      const ziSearchUrl = process.env.ZI_SEARCH_URL;
+
+      if (!ziUsername || !ziPassword || !ziAuthUrl || !ziSearchUrl) {
+        return res.status(500).json({ error: 'ZoomInfo credentials not configured' });
+      }
+
+      const result = await searchPersonByName(
+        body,
+        ziUsername,
+        ziPassword,
+        ziAuthUrl,
+        ziSearchUrl,
+      );
+
+      const responseTimeMs = Date.now() - requestStartTime;
+
+      return res.status(200).json({
+        ...result,
+        response_time_ms: responseTimeMs,
+      });
+    } catch (error) {
+      console.error('Person search error:', error);
+      return res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred',
       });
     }
   }
