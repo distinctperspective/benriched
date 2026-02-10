@@ -1414,9 +1414,9 @@ export async function searchAndEnrichContacts(
       failed_count: errors.length,
     },
     cost: {
-      search_credits: 1,
+      search_credits: 0,
       enrich_credits: enrichCredits,
-      total_credits: 1 + enrichCredits,
+      total_credits: enrichCredits,
     },
     errors,
     raw_search_response: searchData,
