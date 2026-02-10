@@ -61,11 +61,16 @@ Extract the following fields:
     4. Reputable media (Forbes, Bloomberg, Reuters, WSJ)
     5. Wikipedia (as pointer, not primary source)
     6. Directory / estimate sites (Growjo, Owler, Zippia, ZoomInfo, RocketReach)
-  - **SCOPE-AWARE CONFLICT DETECTION**:
+  - **SCOPE-AWARE CONFLICT DETECTION (CRITICAL — READ CAREFULLY)**:
     * Check if revenue figures have "scope" labels (operating_company vs ultimate_parent)
+    * **HARD RULE: NEVER use ultimate_parent revenue as the operating company's revenue.**
+      Parent revenue ($3.3B from Rich Products) is NOT SeaPak's revenue ($6.5M).
+      If the only operating_company figures are from estimate sites, USE THEM — they are correct for this entity.
+      Source authority ranking ONLY applies within the SAME scope.
     * ONLY apply 5x conflict rule within the SAME scope
     * Subsidiary $200M vs Parent $11B is NOT a conflict - they're different entities
-    * If figures are for different scopes, use the operating_company figure when available
+    * If figures are for different scopes, ALWAYS use the operating_company figure
+    * If only ultimate_parent revenue is available and NO operating_company revenue exists, set company_revenue to null
   - If multiple figures exist in SAME scope, use the most recent and highest authority source
   - If conflicting figures within same scope differ by more than 5x, set company_revenue to null
   - If only vague phrases like "multi-million" or "8-figure", choose the LOWEST compatible band

@@ -1,6 +1,6 @@
 import { generateText } from 'ai';
 import { EnrichmentResult, Pass1Result, NAICSCode, TargetICPMatch, RevenueEvidence, AIUsage, DiagnosticInfo } from '../../types.js';
-import { countryNameToCode } from '../../utils/parsing.js';
+import { countryNameToCode, parseRevenueAmountToUsd, mapUsdToRevenueBand } from '../../utils/parsing.js';
 import { calculateAICost } from './pricing.js';
 import { PASS2_PROMPT } from './prompts.js';
 import { VALID_REVENUE_BANDS, PASSING_REVENUE_BANDS, TARGET_REGIONS, normalizeSizeBand, VALID_SIZE_BANDS, getMatchingNaics } from './icp.js';
@@ -68,7 +68,8 @@ export async function pass2_analyzeContentWithUsage(
   if (pass1Data?.revenue_found && Array.isArray(pass1Data.revenue_found) && pass1Data.revenue_found.length > 0) {
     context += `**IMPORTANT - Revenue figures found during web search:**\n`;
     pass1Data.revenue_found.forEach((rev: RevenueEvidence, idx: number) => {
-      context += `  ${idx + 1}. ${rev.amount} (${rev.year}, Source: ${rev.source}${rev.is_estimate ? ', estimate' : ''})\n`;
+      const scopeLabel = rev.scope ? `, scope: ${rev.scope}` : '';
+      context += `  ${idx + 1}. ${rev.amount} (${rev.year}, Source: ${rev.source}${rev.is_estimate ? ', estimate' : ''}${scopeLabel})\n`;
     });
   }
   if (pass1Data?.employee_count_found?.amount) {
@@ -248,7 +249,32 @@ export async function pass2_analyzeContentWithUsage(
         }
       }
     }
-    
+
+    // Scope guard: catch when AI picks parent revenue despite prompt instructions
+    const pass1Revenue = pass1Data?.revenue_found;
+    if (finalRevenue && Array.isArray(pass1Revenue) && pass1Revenue.length > 0) {
+      const hasParentRevenue = pass1Revenue.some(r => r.scope === 'ultimate_parent');
+      const operatingRevenues = pass1Revenue.filter(r => r.scope === 'operating_company');
+
+      if (hasParentRevenue && operatingRevenues.length > 0) {
+        const opAmount = parseRevenueAmountToUsd(operatingRevenues[0].amount);
+        const opBand = opAmount ? mapUsdToRevenueBand(opAmount) : null;
+
+        const parentRevenues = pass1Revenue.filter(r => r.scope === 'ultimate_parent');
+        const parentAmount = parseRevenueAmountToUsd(parentRevenues[0]?.amount);
+        const parentBand = parentAmount ? mapUsdToRevenueBand(parentAmount) : null;
+
+        if (finalRevenue === parentBand && finalRevenue !== opBand && opBand) {
+          console.log(`   ⚠️ Pass2 selected parent revenue band (${parentBand}), overriding with operating company band (${opBand})`);
+          finalRevenue = opBand;
+          if (parsed.quality?.revenue) {
+            parsed.quality.revenue.confidence = 'medium';
+            parsed.quality.revenue.reasoning = `Operating company revenue: ${operatingRevenues[0].amount} from ${operatingRevenues[0].source} (parent ${parentRevenues[0]?.amount} excluded)`;
+          }
+        }
+      }
+    }
+
     let finalSize = normalizeSizeBand(parsed.company_size);
     // Prefer Pass 1 employee data if available and Pass 2 returned unknown or a very small band
     const pass1EmployeeData = pass1Data?.employee_count_found;
@@ -293,12 +319,16 @@ export async function pass2_analyzeContentWithUsage(
     else if (revenueIndex >= 9 && sizeIndex < 6) sizeMismatch = true; // 1B-10B needs 1000+
     else if (revenueIndex >= 7 && sizeIndex < 4) sizeMismatch = true; // 200M-1B needs 200+
     
-    if (sizeMismatch) {
+    // Don't bump size for subsidiaries — their revenue is their own, not the parent's
+    const isSubsidiary = pass1Data?.parent_company && pass1Data?.entity_scope === 'operating_company';
+    if (sizeMismatch && !isSubsidiary) {
       console.log(`   ⚠️ Size/revenue mismatch: ${finalRevenue} revenue with ${finalSize}`);
       // Trust the revenue more, bump up the size estimate
       if (revenueIndex >= 10) finalSize = '5,001-10,000 Employees'; // 10B+
       else if (revenueIndex >= 9) finalSize = '1,001-5,000 Employees'; // 1B-10B
       else if (revenueIndex >= 7) finalSize = '201-500 Employees'; // 200M-1B
+    } else if (sizeMismatch && isSubsidiary) {
+      console.log(`   ℹ️ Size/revenue mismatch for subsidiary "${companyName}" (parent: ${pass1Data?.parent_company}) — skipping size bump`);
     }
     
     // Determine final website and domain using Pass 1 canonical website if available
