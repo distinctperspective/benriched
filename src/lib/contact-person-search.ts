@@ -14,6 +14,7 @@ export interface PersonSearchRequest {
   first_name: string;
   last_name: string;
   company_name?: string;
+  company_domain?: string;
 }
 
 export interface PersonSearchResult {
@@ -75,7 +76,7 @@ export async function searchPersonByName(
 
   // Build search payload with person name
   const payload: Record<string, unknown> = {
-    rpp: 5,
+    rpp: 10,
     page: 1,
     firstName: request.first_name,
     lastName: request.last_name,
@@ -83,6 +84,12 @@ export async function searchPersonByName(
 
   if (request.company_name) {
     payload.companyName = request.company_name;
+  }
+
+  if (request.company_domain) {
+    // companyWebsite is an exact filter — much more reliable than companyName
+    const domain = request.company_domain.replace(/^www\./, '');
+    payload.companyWebsite = `http://www.${domain}`;
   }
 
   console.log('    Calling ZoomInfo Contact Search API...');
@@ -117,7 +124,8 @@ export async function searchPersonByName(
         console.log(`    Retry found ${retryResults.length} results`);
 
         if (retryResults.length > 0) {
-          return formatResult(retryResults[0]);
+          const best = pickBestMatch(retryResults, request.company_name);
+          return formatResult(best);
         }
       }
     }
@@ -125,8 +133,60 @@ export async function searchPersonByName(
     return { success: true, data: null };
   }
 
-  // Return the top match
-  return formatResult(results[0]);
+  // Pick the result that best matches the company name
+  const best = pickBestMatch(results, request.company_name);
+  console.log(`    Selected: ${best.firstName} ${best.lastName} at ${best.companyName || 'unknown'}`);
+  return formatResult(best);
+}
+
+/**
+ * Pick the result whose companyName best matches the expected company.
+ * Normalizes both sides (lowercase, strip punctuation) and checks for substring containment.
+ */
+function pickBestMatch(
+  results: Array<Record<string, unknown>>,
+  expectedCompany: string | undefined,
+): Record<string, unknown> {
+  if (!expectedCompany || results.length <= 1) return results[0];
+
+  const normalize = (s: string) => s.toLowerCase().replace(/[^a-z0-9\s]/g, '').trim();
+  const expected = normalize(expectedCompany);
+  const expectedWords = expected.split(/\s+/);
+
+  let bestScore = -1;
+  let bestResult = results[0];
+
+  for (const r of results) {
+    const co = normalize(String(r.companyName || ''));
+    if (!co) continue;
+
+    let score = 0;
+    // Exact match (after normalization)
+    if (co === expected) {
+      score = 100;
+    }
+    // One contains the other
+    else if (co.includes(expected) || expected.includes(co)) {
+      score = 80;
+    }
+    // Word overlap
+    else {
+      const coWords = co.split(/\s+/);
+      const matching = expectedWords.filter(w => coWords.some(cw => cw.includes(w) || w.includes(cw)));
+      score = Math.round((matching.length / expectedWords.length) * 60);
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestResult = r;
+    }
+  }
+
+  if (bestScore > 0) {
+    console.log(`    Company match score: ${bestScore} for "${bestResult.companyName}"`);
+  }
+
+  return bestResult;
 }
 
 function formatResult(contact: Record<string, unknown>): PersonSearchResult {
