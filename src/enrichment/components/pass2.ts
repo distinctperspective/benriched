@@ -250,22 +250,24 @@ export async function pass2_analyzeContentWithUsage(
       }
     }
 
-    // Scope guard: catch when AI picks parent revenue despite prompt instructions
+    // Compute parent revenue band from pass1 ultimate_parent scope figures
     const pass1Revenue = pass1Data?.revenue_found;
-    if (finalRevenue && Array.isArray(pass1Revenue) && pass1Revenue.length > 0) {
-      const hasParentRevenue = pass1Revenue.some(r => r.scope === 'ultimate_parent');
-      const operatingRevenues = pass1Revenue.filter(r => r.scope === 'operating_company');
+    let parentRevenueBand: string | null = null;
+    if (Array.isArray(pass1Revenue) && pass1Revenue.length > 0) {
+      const parentRevenues = pass1Revenue.filter(r => r.scope === 'ultimate_parent');
+      if (parentRevenues.length > 0) {
+        const parentAmount = parseRevenueAmountToUsd(parentRevenues[0].amount);
+        parentRevenueBand = parentAmount ? mapUsdToRevenueBand(parentAmount) : null;
+      }
 
-      if (hasParentRevenue && operatingRevenues.length > 0) {
+      // Scope guard: catch when AI picks parent revenue despite prompt instructions
+      const operatingRevenues = pass1Revenue.filter(r => r.scope === 'operating_company');
+      if (finalRevenue && parentRevenueBand && operatingRevenues.length > 0) {
         const opAmount = parseRevenueAmountToUsd(operatingRevenues[0].amount);
         const opBand = opAmount ? mapUsdToRevenueBand(opAmount) : null;
 
-        const parentRevenues = pass1Revenue.filter(r => r.scope === 'ultimate_parent');
-        const parentAmount = parseRevenueAmountToUsd(parentRevenues[0]?.amount);
-        const parentBand = parentAmount ? mapUsdToRevenueBand(parentAmount) : null;
-
-        if (finalRevenue === parentBand && finalRevenue !== opBand && opBand) {
-          console.log(`   ⚠️ Pass2 selected parent revenue band (${parentBand}), overriding with operating company band (${opBand})`);
+        if (finalRevenue === parentRevenueBand && finalRevenue !== opBand && opBand) {
+          console.log(`   ⚠️ Pass2 selected parent revenue band (${parentRevenueBand}), overriding with operating company band (${opBand})`);
           finalRevenue = opBand;
           if (parsed.quality?.revenue) {
             parsed.quality.revenue.confidence = 'medium';
@@ -443,7 +445,10 @@ export async function pass2_analyzeContentWithUsage(
       target_icp_matches: targetIcpMatches,
       revenue_pass: finalRevenue ? PASSING_REVENUE_BANDS.has(finalRevenue) : false,
       industry_pass: targetIcpMatches.length > 0,
-      diagnostics
+      diagnostics,
+      // Parent company data from Pass 1
+      parent_company_name: pass1Data?.parent_company || null,
+      parent_company_revenue: parentRevenueBand,
     };
     
     return { result, usage: aiUsage, rawResponse: text };

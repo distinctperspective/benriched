@@ -143,6 +143,7 @@ export interface EnrichmentResult {
   // Parent company linking
   parent_company_name?: string | null;
   parent_company_domain?: string | null;
+  parent_company_revenue?: string | null;
   inherited_revenue?: boolean;
   inherited_size?: boolean;
 }

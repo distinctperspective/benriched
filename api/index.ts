@@ -883,6 +883,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         // Parent company linking
         parent_company_name: result.parent_company_name || null,
         parent_company_domain: result.parent_company_domain || null,
+        parent_company_revenue: result.parent_company_revenue || null,
         inherited_revenue: result.inherited_revenue || false,
         inherited_size: result.inherited_size || false,
       };
