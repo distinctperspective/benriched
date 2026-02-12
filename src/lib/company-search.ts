@@ -18,8 +18,12 @@ const DEFAULT_REVENUE_MIN = 10000; // $10M in thousands
 export interface CompanySearchRequest {
   naics_codes?: string[];
   revenue_min?: number;
+  revenue_max?: number;
   countries?: string[];
   company_name?: string;
+  website?: string;
+  city?: string;
+  state?: string;
   employee_min?: number;
   employee_max?: number;
   exclude_defunct?: boolean;
@@ -191,6 +195,18 @@ export async function searchIcpCompanies(
 
     if (request.company_name) {
       payload.companyName = request.company_name;
+    }
+    if (request.website) {
+      payload.website = request.website;
+    }
+    if (request.city) {
+      payload.city = request.city;
+    }
+    if (request.state) {
+      payload.state = request.state;
+    }
+    if (request.revenue_max !== undefined) {
+      payload.revenueMax = request.revenue_max;
     }
     if (request.employee_min !== undefined) {
       payload.employeeMin = request.employee_min;
