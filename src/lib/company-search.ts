@@ -289,52 +289,15 @@ export async function searchIcpCompanies(
   const totalPages = Math.ceil(totalResults / maxResults);
   console.log("    Total unique companies: " + searchResults.length);
 
-  // 5. Extract domains from results for cross-referencing
-  const domainsByZiId = new Map<string, string>(); // ziId -> normalized domain
-  for (const c of searchResults) {
-    if (!c.website) continue;
-    try {
-      const url = new URL(c.website.startsWith('http') ? c.website : 'https://' + c.website);
-      domainsByZiId.set(String(c.id), url.hostname.replace(/^www\./, '').toLowerCase());
-    } catch {
-      domainsByZiId.set(String(c.id), c.website.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/.*$/, '').toLowerCase());
-    }
-  }
-  const allDomains = Array.from(new Set(domainsByZiId.values()));
-
-  // 6. Cross-reference database (checks both DB presence and hs_company_id)
-  const checkEnriched = request.check_enriched === true;
-  const dbMap = new Map<string, { id: string; already_enriched: boolean; hs_company_id: string | null }>(); // domain -> company record
-
-  if (allDomains.length > 0) {
-    console.log("    Database cross-reference: checking " + allDomains.length + " domains...");
-
-    const { data: dbCompanies } = await supabase
-      .from('companies')
-      .select('id, domain, last_enriched_at, hs_company_id')
-      .in('domain', allDomains);
-
-    for (const dbCompany of (dbCompanies || [])) {
-      dbMap.set(dbCompany.domain, {
-        id: dbCompany.id,
-        already_enriched: !!dbCompany.last_enriched_at,
-        hs_company_id: dbCompany.hs_company_id || null,
-      });
-    }
-
-    console.log("    Database matches: " + dbMap.size + "/" + allDomains.length + " (" + Array.from(dbMap.values()).filter(v => v.hs_company_id).length + " with HS ID)");
-  }
-
-  // 7. Cross-reference HubSpot (default: on)
-  // Strategy order: ZoomInfo ID (unique 1:1) → DB hs_company_id → domain search (fallback)
+  // 5. Cross-reference HubSpot by ZoomInfo company ID (only reliable method)
   const checkHubspot = request.check_hubspot !== false;
   const hubspotMap = new Map<string, string>(); // ziCompanyId -> hsCompanyId
 
   if (checkHubspot && hubspotToken && searchResults.length > 0) {
-    console.log("    HubSpot cross-reference: checking " + searchResults.length + " companies...");
+    console.log("    HubSpot cross-reference: checking " + searchResults.length + " companies by ZI ID...");
 
-    // Strategy 1: Search HubSpot by ZoomInfo company ID (most reliable — unique 1:1 match)
     const allZiIds = searchResults.map(c => String(c.id)).filter(Boolean);
+    // HubSpot filterGroups limit is 5 per request
     const ziIdBatches: string[][] = [];
     for (let i = 0; i < allZiIds.length; i += 5) {
       ziIdBatches.push(allZiIds.slice(i, i + 5));
@@ -378,87 +341,51 @@ export async function searchIcpCompanies(
       }
     }
 
-    console.log("    HubSpot matches from ZI ID: " + hubspotMap.size);
-
-    // Strategy 2: For remaining, check DB records that already have hs_company_id
-    for (const c of searchResults) {
-      const ziId = String(c.id);
-      if (hubspotMap.has(ziId)) continue;
-      const domain = domainsByZiId.get(ziId);
-      const dbMatch = domain ? dbMap.get(domain) : undefined;
-      if (dbMatch?.hs_company_id) {
-        hubspotMap.set(ziId, dbMatch.hs_company_id);
-      }
-    }
-
-    console.log("    HubSpot matches after DB check: " + hubspotMap.size);
-
-    // Strategy 3: For still-remaining with domains, batch search HubSpot by domain
-    const unmatchedWithDomains: Array<{ ziId: string; domain: string }> = [];
-    for (const c of searchResults) {
-      const ziId = String(c.id);
-      if (hubspotMap.has(ziId)) continue;
-      const domain = domainsByZiId.get(ziId);
-      if (domain) {
-        unmatchedWithDomains.push({ ziId, domain });
-      }
-    }
-
-    if (unmatchedWithDomains.length > 0) {
-      const SEARCH_BATCH_SIZE = 50;
-      for (let i = 0; i < unmatchedWithDomains.length; i += SEARCH_BATCH_SIZE) {
-        const batch = unmatchedWithDomains.slice(i, i + SEARCH_BATCH_SIZE);
-        const domains = batch.map(b => b.domain);
-        const allVariants = [...domains, ...domains.map(d => 'www.' + d)];
-
-        try {
-          const hsResponse = await fetch('https://api.hubapi.com/crm/v3/objects/companies/search', {
-            method: 'POST',
-            headers: {
-              'Authorization': 'Bearer ' + hubspotToken,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              filterGroups: [{
-                filters: [{
-                  propertyName: 'domain',
-                  operator: 'IN',
-                  values: allVariants,
-                }],
-              }],
-              properties: ['domain'],
-              limit: 100,
-            }),
-          });
-
-          if (hsResponse.ok) {
-            const hsData = await hsResponse.json();
-            const foundDomains = new Set<string>();
-            for (const result of (hsData.results || [])) {
-              const d = result.properties?.domain;
-              if (d) foundDomains.add(d.replace(/^www\./, '').toLowerCase());
-            }
-            for (const b of batch) {
-              if (foundDomains.has(b.domain)) {
-                hubspotMap.set(b.ziId, 'domain-match');
-              }
-            }
-          }
-        } catch (err) {
-          console.log("    HubSpot domain search error: " + (err instanceof Error ? err.message : err));
-        }
-      }
-    }
-
-    console.log("    HubSpot total matches: " + hubspotMap.size + "/" + searchResults.length);
+    console.log("    HubSpot matches: " + hubspotMap.size + "/" + searchResults.length);
   }
 
-  // 8. Build response companies
+  // 6. For unmatched companies, search DB by name for possible matches
+  const checkEnriched = request.check_enriched === true;
+  const possibleMatchMap = new Map<string, { company_name: string; domain: string }>(); // ziId -> possible match
+
+  if (searchResults.length > 0) {
+    const unmatchedNames: Array<{ ziId: string; name: string }> = [];
+    for (const c of searchResults) {
+      const ziId = String(c.id);
+      if (hubspotMap.has(ziId)) continue;
+      if (c.name) {
+        unmatchedNames.push({ ziId, name: c.name });
+      }
+    }
+
+    if (unmatchedNames.length > 0) {
+      console.log("    DB name search: checking " + unmatchedNames.length + " unmatched companies...");
+
+      for (const { ziId, name } of unmatchedNames) {
+        // Search by name using ilike for fuzzy matching
+        const { data: matches } = await supabase
+          .from('companies')
+          .select('company_name, domain, hs_company_id')
+          .ilike('company_name', '%' + name + '%')
+          .limit(1);
+
+        if (matches && matches.length > 0) {
+          possibleMatchMap.set(ziId, {
+            company_name: matches[0].company_name,
+            domain: matches[0].domain,
+          });
+        }
+      }
+
+      console.log("    DB possible matches: " + possibleMatchMap.size + "/" + unmatchedNames.length);
+    }
+  }
+
+  // 7. Build response companies
   const companies = searchResults.map(c => {
     const ziId = String(c.id);
     const hsCompanyId = hubspotMap.get(ziId);
-    const domain = domainsByZiId.get(ziId);
-    const dbMatch = domain ? dbMap.get(domain) : undefined;
+    const possibleMatch = possibleMatchMap.get(ziId);
 
     const result: any = {
       zoominfo_company_id: ziId,
@@ -474,26 +401,21 @@ export async function searchIcpCompanies(
       country: c.country,
       company_type: c.companyType,
       ticker: c.ticker,
-      // HubSpot cross-reference (always included)
       in_hubspot: !!hsCompanyId,
-      ...(hsCompanyId && hsCompanyId !== 'domain-match' && { hs_company_id: hsCompanyId }),
+      ...(hsCompanyId && { hs_company_id: hsCompanyId }),
+      ...(possibleMatch && {
+        possible_match: possibleMatch.company_name,
+        possible_match_domain: possibleMatch.domain,
+      }),
     };
-
-    // Database cross-reference (only when check_enriched: true)
-    if (checkEnriched) {
-      result.in_database = !!dbMatch;
-      if (dbMatch) {
-        result.database_company_id = dbMatch.id;
-        result.already_enriched = dbMatch.already_enriched;
-      }
-    }
 
     return result;
   });
 
   const inHubspotCount = hubspotMap.size;
-  const inDatabaseCount = dbMap.size;
-  const newCompaniesCount = companies.filter(c => !c.in_hubspot && (!checkEnriched || !c.in_database)).length;
+  const possibleMatchCount = possibleMatchMap.size;
+  const inDatabaseCount = 0;
+  const newCompaniesCount = companies.filter(c => !c.in_hubspot && !c.possible_match).length;
 
   // Filter out companies already in HubSpot (when filter_in_hubspot is false)
   let filteredCompanies = companies;
