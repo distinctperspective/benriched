@@ -14,7 +14,11 @@ import { supabase } from '../../../lib/supabase.js';
 export async function handleClayCallback(c: Context) {
   try {
     const payload = await c.req.json();
-    const { id, ...enrichedData } = payload;
+    // Clay sends "Id" (capital I) — handle both cases
+    const id = payload.id || payload.Id;
+    const enrichedData = { ...payload };
+    delete enrichedData.id;
+    delete enrichedData.Id;
 
     if (!id) {
       return c.json({ error: "Missing 'id' field in callback payload" }, 400);

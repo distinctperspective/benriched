@@ -689,8 +689,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
-      const payload = req.body;
-      const { id, ...enrichedData } = payload || {};
+      const payload = req.body || {};
+      // Clay sends "Id" (capital I) — handle both cases
+      const id = payload.id || payload.Id;
+      const enrichedData = { ...payload };
+      delete enrichedData.id;
+      delete enrichedData.Id;
 
       if (!id) {
         return res.status(400).json({ error: "Missing 'id' field in callback payload" });
