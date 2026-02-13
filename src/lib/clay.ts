@@ -49,12 +49,31 @@ function generateId(): string {
 // ─── Resolve webhook by name or id ─────────────────────────────
 
 export async function resolveWebhook(nameOrId: string): Promise<ClayWebhook> {
+  // Try by name first (most common), fall back to id lookup for UUIDs
   const { data, error } = await supabase
     .from('clay_webhooks')
     .select('*')
-    .or(`name.eq.${nameOrId},id.eq.${nameOrId}`)
-    .limit(1)
+    .eq('name', nameOrId)
     .single();
+
+  // If not found by name and input looks like a UUID, try by id
+  if (!data && /^[0-9a-f-]{36}$/i.test(nameOrId)) {
+    const { data: byId, error: idError } = await supabase
+      .from('clay_webhooks')
+      .select('*')
+      .eq('id', nameOrId)
+      .single();
+
+    if (idError || !byId) {
+      throw new Error(`Webhook not found: ${nameOrId}`);
+    }
+
+    const webhook = byId as unknown as ClayWebhook;
+    if (!webhook.is_enabled) {
+      throw new Error(`Webhook "${webhook.name}" is disabled`);
+    }
+    return webhook;
+  }
 
   if (error || !data) {
     throw new Error(`Webhook not found: ${nameOrId}`);
