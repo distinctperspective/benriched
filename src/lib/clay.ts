@@ -40,12 +40,6 @@ export interface ClayEnrichResponse {
 const POLL_INTERVAL_MS = 2_000;
 const DEFAULT_TIMEOUT_MS = 5 * 60 * 1_000; // 5 minutes
 
-// ─── Helpers ───────────────────────────────────────────────────
-
-function generateId(): string {
-  return `clay_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-}
-
 // ─── Resolve webhook by name or id ─────────────────────────────
 
 export async function resolveWebhook(nameOrId: string): Promise<ClayWebhook> {
@@ -175,22 +169,23 @@ export async function enrich(
     }
   }
 
-  // 2. Create pending request
-  const requestId = generateId();
-
-  const { error: insertError } = await supabase
+  // 2. Create pending request — DB generates the UUID
+  const { data: inserted, error: insertError } = await supabase
     .from('clay_requests')
     .insert({
-      id: requestId,
       webhook_name: webhook.name,
       lookup_key: lookupKey,
       request_payload: payload,
       status: 'pending',
-    });
+    })
+    .select('id')
+    .single();
 
-  if (insertError) {
-    throw new Error(`Failed to create Clay request: ${insertError.message}`);
+  if (insertError || !inserted) {
+    throw new Error(`Failed to create Clay request: ${insertError?.message}`);
   }
+
+  const requestId = inserted.id as string;
 
   // 3. POST to Clay webhook
   try {
