@@ -208,12 +208,8 @@ export async function searchIcpCompanies(
     if (request.revenue_max !== undefined) {
       payload.revenueMax = request.revenue_max;
     }
-    if (request.employee_min !== undefined) {
-      payload.employeeMin = request.employee_min;
-    }
-    if (request.employee_max !== undefined) {
-      payload.employeeMax = request.employee_max;
-    }
+    // Note: ZoomInfo doesn't support employeeMin/employeeMax as search filters
+    // Employee filtering is done post-fetch below
 
     return payload;
   };
@@ -282,7 +278,20 @@ export async function searchIcpCompanies(
     }
   }
 
-  const searchResults = Array.from(allResultsMap.values());
+  let searchResults = Array.from(allResultsMap.values());
+
+  // Post-fetch employee count filtering (ZoomInfo doesn't support these as search params)
+  if (request.employee_min !== undefined || request.employee_max !== undefined) {
+    const before = searchResults.length;
+    searchResults = searchResults.filter(c => {
+      const count = c.employeeCount ?? 0;
+      if (request.employee_min !== undefined && count < request.employee_min) return false;
+      if (request.employee_max !== undefined && count > request.employee_max) return false;
+      return true;
+    });
+    console.log("    Employee filter: " + searchResults.length + "/" + before + " companies (min: " + (request.employee_min ?? 'none') + ", max: " + (request.employee_max ?? 'none') + ")");
+  }
+
   // Sort by revenue descending (revenueNum field)
   searchResults.sort((a, b) => (b.revenueNum || 0) - (a.revenueNum || 0));
 
