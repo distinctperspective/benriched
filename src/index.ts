@@ -47,7 +47,7 @@ app.get('/', (c) => {
   });
 });
 
-// Mount v1 routes with auth middleware (except health)
+// Mount v1 routes with auth middleware (except health and clay/callback)
 app.use('/v1/enrich/*', rateLimitMiddleware);
 app.use('/v1/enrich/*', authMiddleware);
 app.use('/v1/research/*', rateLimitMiddleware);
@@ -58,6 +58,11 @@ app.use('/v1/generate/*', rateLimitMiddleware);
 app.use('/v1/generate/*', authMiddleware);
 app.use('/v1/search/*', rateLimitMiddleware);
 app.use('/v1/search/*', authMiddleware);
+app.use('/v1/clay/enrich/*', rateLimitMiddleware);
+app.use('/v1/clay/enrich/*', authMiddleware);
+app.use('/v1/clay/webhooks/*', rateLimitMiddleware);
+app.use('/v1/clay/webhooks/*', authMiddleware);
+// NOTE: /v1/clay/callback has NO auth — Clay must call it directly
 
 // Mount legacy routes with auth middleware (except health)
 app.use('/enrich*', rateLimitMiddleware);

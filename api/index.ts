@@ -17,6 +17,7 @@ import {
   listExclusionKeywords,
 } from '../src/lib/icp-exclusions.js';
 import { saveEnrichmentRequest, EnrichmentRequestRecord } from '../src/lib/requests.js';
+import { enrich as clayEnrich, resolveWebhook } from '../src/lib/clay.js';
 
 const SEARCH_MODEL_ID = 'perplexity/sonar-pro';
 const ANALYSIS_MODEL_ID = 'openai/gpt-4o-mini';
@@ -679,6 +680,238 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     return res.status(405).json({ error: 'Method not allowed. Use GET, POST, or DELETE.' });
+  }
+
+  // ─── Clay callback (NO auth — Clay calls this directly) ───────
+  if (req.url?.includes('/clay/callback')) {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method not allowed. Use POST.' });
+    }
+
+    try {
+      const payload = req.body;
+      const { id, ...enrichedData } = payload || {};
+
+      if (!id) {
+        return res.status(400).json({ error: "Missing 'id' field in callback payload" });
+      }
+
+      const { data: existingRequest, error: lookupError } = await supabase
+        .from('clay_requests')
+        .select('id, webhook_name, status')
+        .eq('id', id)
+        .single();
+
+      if (lookupError || !existingRequest) {
+        return res.status(404).json({ error: `Request not found: ${id}` });
+      }
+
+      if (existingRequest.status === 'completed') {
+        return res.status(200).json({ ok: true, message: 'Already completed' });
+      }
+
+      // Verify callback secret if provided
+      const callbackSecret =
+        req.headers['x-clay-callback-secret'] as string ||
+        payload?._callback_secret;
+
+      if (callbackSecret) {
+        const { data: webhook } = await supabase
+          .from('clay_webhooks')
+          .select('callback_secret')
+          .eq('name', existingRequest.webhook_name)
+          .single();
+
+        if (webhook?.callback_secret && callbackSecret !== webhook.callback_secret) {
+          return res.status(401).json({ error: 'Invalid callback secret' });
+        }
+      }
+
+      const { data: webhookConfig } = await supabase
+        .from('clay_webhooks')
+        .select('cache_ttl_days')
+        .eq('name', existingRequest.webhook_name)
+        .single();
+
+      const cacheTtlDays = webhookConfig?.cache_ttl_days ?? 30;
+      const expiresAt = new Date(
+        Date.now() + cacheTtlDays * 24 * 60 * 60 * 1000
+      ).toISOString();
+
+      const cleanedData = { ...enrichedData };
+      delete cleanedData._callback_secret;
+
+      const { error: updateError } = await supabase
+        .from('clay_requests')
+        .update({
+          response_payload: cleanedData,
+          status: 'completed',
+          completed_at: new Date().toISOString(),
+          expires_at: expiresAt,
+        })
+        .eq('id', id);
+
+      if (updateError) {
+        console.error(`[Clay Callback] Failed to update request ${id}:`, updateError);
+        return res.status(500).json({ error: 'Failed to update request' });
+      }
+
+      console.log(`[Clay Callback] Request ${id} completed`);
+      return res.status(200).json({ ok: true });
+    } catch (error) {
+      console.error('[Clay Callback] Error:', error);
+      return res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // ─── Clay enrich (requires auth) ────────────────────────────
+  if (req.url?.includes('/clay/enrich') && !req.url?.includes('/clay/callback')) {
+    if (req.method !== 'POST') {
+      return res.status(405).json({ error: 'Method not allowed. Use POST.' });
+    }
+
+    // Auth check
+    const authHeader = req.headers.authorization;
+    const xApiKey = req.headers['x-api-key'] as string;
+    const queryApiKey = req.query?.api_key as string;
+    const bodyApiKey = req.body?.api_key as string;
+    const apiKey = process.env.API_KEY || 'amlink21';
+
+    const isAuthorized =
+      authHeader === `Bearer ${apiKey}` ||
+      xApiKey === apiKey ||
+      queryApiKey === apiKey ||
+      bodyApiKey === apiKey;
+
+    if (!isAuthorized) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        hint: 'Include api_key in body, query, X-API-Key header, or Authorization: Bearer <key>',
+      });
+    }
+
+    try {
+      const { webhook, data, lookupKey, forceRefresh } = req.body || {};
+
+      if (!webhook) return res.status(400).json({ error: 'webhook is required' });
+      if (!data || typeof data !== 'object') return res.status(400).json({ error: 'data object is required' });
+      if (!lookupKey) return res.status(400).json({ error: 'lookupKey is required' });
+
+      const result = await clayEnrich(webhook, data, lookupKey, {
+        forceRefresh: forceRefresh || false,
+      });
+
+      return res.status(200).json({ success: true, ...result });
+    } catch (error) {
+      console.error('[Clay Enrich] Error:', error);
+      const message = error instanceof Error ? error.message : 'Failed to enrich';
+      const status = message.includes('not found')
+        ? 404
+        : message.includes('disabled')
+          ? 422
+          : message.includes('timed out')
+            ? 504
+            : 500;
+
+      return res.status(status).json({ success: false, error: message });
+    }
+  }
+
+  // ─── Clay webhooks management (requires auth) ───────────────
+  if (req.url?.includes('/clay/webhooks')) {
+    // Auth check
+    const authHeader = req.headers.authorization;
+    const xApiKey = req.headers['x-api-key'] as string;
+    const queryApiKey = req.query?.api_key as string;
+    const bodyApiKey = req.body?.api_key as string;
+    const apiKey = process.env.API_KEY || 'amlink21';
+
+    const isAuthorized =
+      authHeader === `Bearer ${apiKey}` ||
+      xApiKey === apiKey ||
+      queryApiKey === apiKey ||
+      bodyApiKey === apiKey;
+
+    if (!isAuthorized) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        hint: 'Include api_key in body, query, X-API-Key header, or Authorization: Bearer <key>',
+      });
+    }
+
+    if (req.method === 'GET') {
+      const { data, error } = await supabase
+        .from('clay_webhooks')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) return res.status(500).json({ success: false, error: error.message });
+      return res.status(200).json({ success: true, data });
+    }
+
+    if (req.method === 'POST') {
+      const { name, webhook_url, callback_secret, cache_ttl_days, description } = req.body || {};
+      if (!name || !webhook_url) {
+        return res.status(400).json({ success: false, error: 'name and webhook_url are required' });
+      }
+
+      const { data, error } = await supabase
+        .from('clay_webhooks')
+        .insert({
+          name,
+          webhook_url,
+          callback_secret: callback_secret || null,
+          cache_ttl_days: cache_ttl_days ?? 30,
+          description: description || null,
+        })
+        .select()
+        .single();
+
+      if (error) {
+        if (error.code === '23505') {
+          return res.status(409).json({ success: false, error: `Webhook "${name}" already exists` });
+        }
+        return res.status(500).json({ success: false, error: error.message });
+      }
+
+      return res.status(201).json({ success: true, data });
+    }
+
+    if (req.method === 'PATCH') {
+      const { id, ...updates } = req.body || {};
+      if (!id) return res.status(400).json({ success: false, error: 'id is required' });
+
+      const allowedFields = ['name', 'webhook_url', 'callback_secret', 'cache_ttl_days', 'is_enabled', 'description'];
+      const sanitized: Record<string, unknown> = {};
+      for (const key of allowedFields) {
+        if (key in updates) sanitized[key] = updates[key];
+      }
+
+      if (Object.keys(sanitized).length === 0) {
+        return res.status(400).json({ success: false, error: 'No valid fields to update' });
+      }
+
+      const { data, error } = await supabase
+        .from('clay_webhooks')
+        .update(sanitized)
+        .eq('id', id)
+        .select()
+        .single();
+
+      if (error) return res.status(500).json({ success: false, error: error.message });
+      return res.status(200).json({ success: true, data });
+    }
+
+    if (req.method === 'DELETE') {
+      const id = req.query?.id as string;
+      if (!id) return res.status(400).json({ success: false, error: 'id query parameter is required' });
+
+      const { error } = await supabase.from('clay_webhooks').delete().eq('id', id);
+      if (error) return res.status(500).json({ success: false, error: error.message });
+      return res.status(200).json({ success: true });
+    }
+
+    return res.status(405).json({ error: 'Method not allowed' });
   }
 
   // Persona matching endpoint
