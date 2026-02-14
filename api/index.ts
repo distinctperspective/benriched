@@ -689,7 +689,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
-      const payload = req.body || {};
+      // Clay may send JSON as a string — parse it if needed
+      let payload = req.body || {};
+      if (typeof payload === 'string') {
+        try { payload = JSON.parse(payload); } catch { /* keep as-is */ }
+      }
       // Clay sends "Id" (capital I) — handle both cases
       const id = payload.id || payload.Id;
       const enrichedData = { ...payload };

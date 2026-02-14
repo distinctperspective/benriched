@@ -13,7 +13,11 @@ import { supabase } from '../../../lib/supabase.js';
  */
 export async function handleClayCallback(c: Context) {
   try {
-    const payload = await c.req.json();
+    // Clay may send JSON as a string — parse it if needed
+    let payload = await c.req.json();
+    if (typeof payload === 'string') {
+      try { payload = JSON.parse(payload); } catch { /* keep as-is */ }
+    }
     // Clay sends "Id" (capital I) — handle both cases
     const id = payload.id || payload.Id;
     const enrichedData = { ...payload };
