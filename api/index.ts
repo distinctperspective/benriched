@@ -689,10 +689,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     try {
-      // Clay may send JSON as a string — parse it if needed
-      let payload = req.body || {};
-      if (typeof payload === 'string') {
-        try { payload = JSON.parse(payload); } catch { /* keep as-is */ }
+      // Clay may send body as string, double-encoded JSON, or without proper Content-Type.
+      // Aggressively parse until we get an object with an id field.
+      let payload: any = req.body || {};
+      // If body is a string, parse it (possibly multiple times if double-encoded)
+      for (let i = 0; i < 3 && typeof payload === 'string'; i++) {
+        try { payload = JSON.parse(payload); } catch { break; }
       }
       // Clay sends "Id" (capital I) — handle both cases
       const id = payload.id || payload.Id;
