@@ -970,28 +970,82 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const requestStartTime = Date.now();
-  const { domain, company_name, hs_company_id, hs_object_id, force_refresh = false, async = false, deep_research = false } = body || {};
+  const { domain, company_name, hs_company_id, hs_object_id, zoominfo_company_id, force_refresh = false, async = false, deep_research = false } = body || {};
   const companyId = hs_company_id || hs_object_id; // Support both field names
   const requestId = randomUUID();
 
   // Normalize domain early so it's available in catch block
   let normalizedDomain = '';
-  
-  if (!domain) {
-    return res.status(400).json({ error: 'Missing required field: domain' });
+
+  if (!domain && !zoominfo_company_id) {
+    return res.status(400).json({ error: 'Missing required field: domain or zoominfo_company_id' });
+  }
+
+  // If no domain but we have a ZoomInfo ID, check DB for existing company by ZoomInfo ID
+  // or derive a domain from the company name
+  let derivedFromZoomInfo = false;
+  let inputDomain = domain;
+  if (!inputDomain && zoominfo_company_id) {
+    // First check if we already have this company by ZoomInfo ID
+    const { data: ziCompany } = await supabase
+      .from('companies')
+      .select('*')
+      .eq('zoominfo_company_id', String(zoominfo_company_id))
+      .single();
+
+    if (ziCompany && !force_refresh) {
+      const responseTimeMs = Date.now() - requestStartTime;
+      console.log(`[ZoomInfo Cache Hit] Found company by ZI ID ${zoominfo_company_id}: ${ziCompany.domain}`);
+      try {
+        await supabase.from('enrichment_requests').insert({
+          hs_company_id: companyId || null,
+          domain: ziCompany.domain,
+          company_id: ziCompany.id,
+          request_source: 'api',
+          request_type: 'cache_hit',
+          was_cached: true,
+          cost_usd: 0,
+          response_time_ms: responseTimeMs,
+        });
+      } catch (logError) {
+        console.error('[ZoomInfo Cache Log Error]', logError);
+      }
+      return res.status(200).json({
+        success: true,
+        data: ziCompany,
+        cached: true,
+        hs_company_id: companyId || null
+      });
+    }
+
+    // If found but force_refresh, use the existing domain
+    if (ziCompany) {
+      inputDomain = ziCompany.domain;
+    } else if (company_name) {
+      // Derive a domain slug from the company name for the pipeline
+      // The domain resolution stage + pass1 will find the real website
+      inputDomain = company_name
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '')
+        .substring(0, 40) + '.com';
+      derivedFromZoomInfo = true;
+      console.log(`[ZoomInfo Prospect] No domain provided. Using derived "${inputDomain}" + company name "${company_name}" for enrichment`);
+    } else {
+      return res.status(400).json({ error: 'When using zoominfo_company_id without domain, company_name is required' });
+    }
   }
 
   try {
     // Normalize domain using WHATWG URL API for security and robustness
     let normalizedDomain = '';
-    
+
     try {
       // Try to parse as URL first
-      const url = new URL(domain.startsWith('http') ? domain : `https://${domain}`);
+      const url = new URL(inputDomain.startsWith('http') ? inputDomain : `https://${inputDomain}`);
       normalizedDomain = url.hostname.toLowerCase();
     } catch {
       // If URL parsing fails, fall back to simple normalization
-      normalizedDomain = (domain as string)
+      normalizedDomain = (inputDomain as string)
         .toLowerCase()
         .replace(/^https?:\/\//, '')  // Remove protocol
         .replace(/^www\./, '')         // Remove www.
@@ -1101,9 +1155,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       );
 
       // Save company (include hs_company_id if provided)
-      // Always use normalizedDomain for upsert key to avoid creating duplicates when domain resolves differently
+      // When derived from ZoomInfo (no real domain), use the resolved website domain instead of the slug
+      let upsertDomain = normalizedDomain;
+      if (derivedFromZoomInfo && result.website) {
+        try {
+          const resolvedUrl = new URL(result.website.startsWith('http') ? result.website : `https://${result.website}`);
+          upsertDomain = resolvedUrl.hostname.replace(/^www\./, '');
+          console.log(`[ZoomInfo Prospect] Using resolved domain "${upsertDomain}" instead of derived "${normalizedDomain}"`);
+          normalizedDomain = upsertDomain; // Update for request logging below
+        } catch {
+          // Keep the derived domain if URL parsing fails
+        }
+      }
       const companyData: Record<string, unknown> = {
-        domain: normalizedDomain,
+        domain: upsertDomain,
         company_name: result.company_name,
         website: result.website,
         linkedin_url: result.linkedin_url,
@@ -1134,6 +1199,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // Add hs_company_id if provided from HubSpot
       if (companyId) {
         companyData.hs_company_id = companyId;
+      }
+      // Add zoominfo_company_id if provided
+      if (zoominfo_company_id) {
+        companyData.zoominfo_company_id = String(zoominfo_company_id);
       }
       
       const { data: savedCompany, error: upsertError } = await supabase
