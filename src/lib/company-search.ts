@@ -355,7 +355,7 @@ export async function searchIcpCompanies(
 
   // 6. For unmatched companies, search DB by name for possible matches
   const checkEnriched = request.check_enriched === true;
-  const possibleMatchMap = new Map<string, { company_name: string; domain: string }>(); // ziId -> possible match
+  const possibleMatchMap = new Map<string, { company_name: string; domain: string; hs_company_id: string | null; target_account: boolean }>(); // ziId -> possible match
 
   if (searchResults.length > 0) {
     const unmatchedNames: Array<{ ziId: string; name: string }> = [];
@@ -374,7 +374,7 @@ export async function searchIcpCompanies(
         // Search by name using ilike for fuzzy matching
         const { data: matches } = await supabase
           .from('companies')
-          .select('company_name, domain, hs_company_id')
+          .select('company_name, domain, hs_company_id, target_account')
           .ilike('company_name', '%' + name + '%')
           .limit(1);
 
@@ -382,6 +382,8 @@ export async function searchIcpCompanies(
           possibleMatchMap.set(ziId, {
             company_name: matches[0].company_name,
             domain: matches[0].domain,
+            hs_company_id: matches[0].hs_company_id,
+            target_account: matches[0].target_account,
           });
         }
       }
@@ -415,6 +417,8 @@ export async function searchIcpCompanies(
       ...(possibleMatch && {
         possible_match: possibleMatch.company_name,
         possible_match_domain: possibleMatch.domain,
+        possible_match_hs_id: possibleMatch.hs_company_id,
+        possible_match_is_icp: possibleMatch.target_account,
       }),
     };
 
