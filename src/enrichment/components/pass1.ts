@@ -12,7 +12,7 @@ export interface Pass1WithUsage {
 export async function pass1_identifyUrls(
   domain: string,
   model: any,
-  modelId: string = 'perplexity/sonar-pro',
+  modelId: string = 'perplexity/sonar',
   providedCompanyName?: string,
   providedState?: string,
   providedCountry?: string
@@ -24,7 +24,7 @@ export async function pass1_identifyUrls(
 export async function pass1_identifyUrlsWithUsage(
   domain: string,
   model: any,
-  modelId: string = 'perplexity/sonar-pro',
+  modelId: string = 'perplexity/sonar',
   providedCompanyName?: string,
   providedState?: string,
   providedCountry?: string

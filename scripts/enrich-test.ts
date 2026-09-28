@@ -912,7 +912,7 @@ async function enrichDomain(domain: string, jsonOnly: boolean = false): Promise<
   }
 
   const useGateway = !!process.env.AI_GATEWAY_API_KEY;
-  const modelId = 'perplexity/sonar-pro';
+  const modelId = 'perplexity/sonar';
   
   // Use a faster/cheaper model for Pass 2 analysis since we have the content
   const analysisModelId = 'openai/gpt-4o-mini';
@@ -928,7 +928,7 @@ async function enrichDomain(domain: string, jsonOnly: boolean = false): Promise<
     // Get models
     const searchModel = useGateway 
       ? gateway(modelId)
-      : createOpenAI({ apiKey, baseURL: 'https://api.perplexity.ai' })('sonar-pro');
+      : createOpenAI({ apiKey, baseURL: 'https://api.perplexity.ai' })('sonar');
     
     const analysisModel = useGateway
       ? gateway(analysisModelId)

@@ -211,7 +211,7 @@ interface EnrichmentContext {
   forceDeepResearch: boolean;        // Force deep research pass
   searchModel: any;                  // Perplexity model instance
   analysisModel: any;                // GPT-4o-mini model instance
-  searchModelId: string;             // "perplexity/sonar-pro"
+  searchModelId: string;             // "perplexity/sonar"
   analysisModelId: string;           // "openai/gpt-4o-mini"
   firecrawlApiKey?: string;          // Firecrawl API key
   emitter?: SSEEmitter;              // Optional SSE stream for progress events
@@ -385,7 +385,7 @@ ctx.domain ──→ [1 Domain Resolution] ──→ ctx.enrichmentDomain
 ### Stage 2: Pass 1 Search
 **File:** `pipeline/stages/pass1-search.ts` (47 lines)
 
-**Purpose:** Use Perplexity Sonar Pro to search the web for company data.
+**Purpose:** Use Perplexity Sonar to search the web for company data.
 
 **Process:**
 1. Call `pass1_identifyUrlsWithUsage()` with the resolved domain
@@ -705,7 +705,7 @@ Pass 1 found neither               → Tier 1 + 4 Tier 2 (up to 6 URLs)
 
 | Service | Model/API | Used In | Purpose |
 |---------|-----------|---------|---------|
-| Perplexity | `perplexity/sonar-pro` | Stages 2, 4 | Web search with real-time internet |
+| Perplexity | `perplexity/sonar` | Stages 2, 4 | Web search with real-time internet |
 | OpenAI | `openai/gpt-4o-mini` | Stage 9 | Content analysis and extraction |
 | Gemini | `google/gemini-2.0-flash-exp` | Stage 3 | Fallback LinkedIn search |
 | Firecrawl | REST API | Stages 1, 3, 6 | Web scraping + Google search |

@@ -17,7 +17,7 @@ interface EnrichRequest {
 }
 
 // Model IDs for cost tracking
-const SEARCH_MODEL_ID = 'perplexity/sonar-pro';
+const SEARCH_MODEL_ID = 'perplexity/sonar';
 const ANALYSIS_MODEL_ID = 'openai/gpt-4o-mini';
 
 app.post('/', async (c) => {

@@ -20,7 +20,7 @@ async function searchWithPerplexity(query: string): Promise<SearchResult> {
   const startTime = Date.now();
   try {
     const { text } = await generateText({
-      model: gateway('perplexity/sonar-pro'),
+      model: gateway('perplexity/sonar'),
       prompt: query,
       temperature: 0.1,
     });

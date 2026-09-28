@@ -6,7 +6,7 @@ export async function runPass1Search(ctx: EnrichmentContext): Promise<void> {
     stage: 'pass1_search',
     message: 'Searching web for company data...',
     status: 'started',
-    data: { model: 'perplexity/sonar-pro' }
+    data: { model: ctx.searchModelId }
   });
 
   const { result, usage, rawResponse } = await pass1_identifyUrlsWithUsage(

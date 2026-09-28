@@ -84,7 +84,7 @@ benriched/
 Benriched is an AI-powered company and contact enrichment system that combines web search, web scraping, and AI analysis to extract and validate company data including revenue, employee count, location, industry classification, and ICP matching.
 
 **Key Technologies:**
-- Perplexity Sonar Pro (web search)
+- Perplexity Sonar (company web search, via AI Gateway); Sonar Pro (contact research, direct API)
 - OpenAI GPT-4o-mini (content analysis)
 - Firecrawl (web scraping)
 - Supabase PostgreSQL (data storage)
@@ -156,7 +156,7 @@ data: {"stage":"pass1_search","message":"Web search complete","status":"complete
 |-------|------|-------------|
 | cache_check | Check | Checking for cached company data |
 | domain_resolution | API | Resolving domain to company website |
-| pass1_search | AI | Web search with Perplexity Sonar Pro |
+| pass1_search | AI | Web search with Perplexity Sonar |
 | deep_research | AI | Deep research (triggered if outliers detected) |
 | url_selection | Process | Selecting URLs to scrape |
 | scraping | API | Scraping with Firecrawl |
@@ -320,7 +320,7 @@ curl -X POST "https://benriched.vercel.app/enrich" \
   "cost": {
     "ai": {
       "pass1": {
-        "model": "perplexity/sonar-pro",
+        "model": "perplexity/sonar",
         "inputTokens": 996,
         "outputTokens": 1156,
         "totalTokens": 2152,
@@ -720,7 +720,7 @@ The system processes domains through 12 stages:
 - Find actual company website if domain is email-only
 - Track credits used
 
-### Stage 2: Pass 1 - Web Search (Perplexity Sonar Pro)
+### Stage 2: Pass 1 - Web Search (Perplexity Sonar)
 - Search web for company information
 - Collect revenue evidence (all sources found)
 - Extract employee count
@@ -744,7 +744,7 @@ The system processes domains through 12 stages:
 }
 ```
 
-### Stage 3: Deep Research (Conditional - Perplexity Sonar Pro)
+### Stage 3: Deep Research (Conditional - Perplexity Sonar)
 Triggered if Pass 1 results have outliers:
 - Missing revenue
 - Missing employees
@@ -966,11 +966,17 @@ A company matches Target ICP if ALL of:
 
 ## External Integrations
 
-### Perplexity Sonar Pro
-- Model: `perplexity/sonar-pro`
+### Perplexity Sonar
+- Model: `perplexity/sonar` (via Vercel AI Gateway)
 - Used in: Pass 1, Deep Research
-- Cost: $0.003 per 1K input tokens, $0.012 per 1K output tokens
+- Cost: $1 per 1M input tokens, $1 per 1M output tokens, plus ~$0.005 per-request search fee
 - Purpose: Web search with real-time internet access
+- Note: `perplexity/sonar-pro` was removed from the AI Gateway (Sept 2026); requests for it return "Model not found"
+
+### Perplexity Sonar Pro
+- Model: `sonar-pro` (direct Perplexity API, `PERPLEXITY_API_KEY`)
+- Used in: Contact research (`/v1/research/contact`)
+- Cost: $3 per 1M input tokens, $15 per 1M output tokens, plus per-request search fee
 
 ### OpenAI GPT-4o-mini
 - Model: `openai/gpt-4o-mini`

@@ -19,7 +19,7 @@ import {
 import { saveEnrichmentRequest, EnrichmentRequestRecord } from '../src/lib/requests.js';
 import { enrich as clayEnrich, resolveWebhook } from '../src/lib/clay.js';
 
-const SEARCH_MODEL_ID = 'perplexity/sonar-pro';
+const SEARCH_MODEL_ID = 'perplexity/sonar';
 const ANALYSIS_MODEL_ID = 'openai/gpt-4o-mini';
 
 const supabaseUrl = process.env.SUPABASE_URL || '';

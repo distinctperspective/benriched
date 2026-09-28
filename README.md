@@ -99,7 +99,7 @@ For system documentation used by Claude AI, see [claude.md](claude.md).
 ## Tech Stack
 
 - **API Framework**: Hono (lightweight, edge-compatible)
-- **Search**: Perplexity Sonar Pro (web search with real-time access)
+- **Search**: Perplexity Sonar (web search with real-time access)
 - **Analysis**: OpenAI GPT-4o-mini (content extraction)
 - **Scraping**: Firecrawl (JavaScript-rendered content)
 - **Contact Enrichment**: ZoomInfo API

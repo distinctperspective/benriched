@@ -8,7 +8,7 @@ import { generateText } from 'ai';
 // Load environment variables
 dotenv.config({ path: '.env.local' });
 
-const SEARCH_MODEL_ID = 'perplexity/sonar-pro';
+const SEARCH_MODEL_ID = 'perplexity/sonar';
 
 // Load target ICP NAICS codes from database
 let CORE_TAM_NAICS: string[] = [];

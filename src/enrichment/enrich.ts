@@ -23,7 +23,7 @@ export async function enrichDomainWithCost(
   searchModel: any,
   analysisModel: any,
   firecrawlApiKey?: string,
-  searchModelId: string = 'perplexity/sonar-pro',
+  searchModelId: string = 'perplexity/sonar',
   analysisModelId: string = 'openai/gpt-4o-mini',
   forceDeepResearch: boolean = false,
   emitter?: SSEEmitter,

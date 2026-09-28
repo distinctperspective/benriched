@@ -121,7 +121,7 @@ export function createContext(opts: {
     forceDeepResearch: opts.forceDeepResearch || false,
     searchModel: opts.searchModel,
     analysisModel: opts.analysisModel,
-    searchModelId: opts.searchModelId || 'perplexity/sonar-pro',
+    searchModelId: opts.searchModelId || 'perplexity/sonar',
     analysisModelId: opts.analysisModelId || 'openai/gpt-4o-mini',
     firecrawlApiKey: opts.firecrawlApiKey,
     emitter: opts.emitter,

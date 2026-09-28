@@ -2,7 +2,7 @@ import { gateway } from '@ai-sdk/gateway';
 import { generateText } from 'ai';
 
 async function testMonogram() {
-  const model = gateway('perplexity/sonar-pro');
+  const model = gateway('perplexity/sonar');
 
   console.log('=== MONOGRAM FOODS TEST ===');
   try {

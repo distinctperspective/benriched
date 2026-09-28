@@ -133,7 +133,7 @@ The following 14 stages are emitted during enrichment:
 |-------|-------------|-------------|
 | `cache_check` | Checking for cached company data | No |
 | `domain_resolution` | Resolving domain to company website | Yes |
-| `pass1_search` | Web search with Perplexity Sonar Pro | Yes |
+| `pass1_search` | Web search with Perplexity Sonar | Yes |
 | `deep_research` | Deep research queries (conditional, if outliers detected) | Yes |
 | `url_selection` | Selecting URLs to scrape | No |
 | `scraping` | Scraping with Firecrawl | Yes |
@@ -483,7 +483,7 @@ curl -N -X POST "https://benriched.vercel.app/v1/enrich/company?stream=true" \
   "cost": {
     "ai": {
       "pass1": {
-        "model": "perplexity/sonar-pro",
+        "model": "perplexity/sonar",
         "inputTokens": 996,
         "outputTokens": 1156,
         "totalTokens": 2152,

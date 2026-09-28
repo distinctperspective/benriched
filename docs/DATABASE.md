@@ -519,7 +519,7 @@ NAICS codes are 6-digit industry classification codes stored as:
 {
   "ai": {
     "pass1": {
-      "model": "perplexity/sonar-pro",
+      "model": "perplexity/sonar",
       "inputTokens": 996,
       "outputTokens": 1156,
       "totalTokens": 2152,
@@ -533,7 +533,7 @@ NAICS codes are 6-digit industry classification codes stored as:
       "costUsd": 0.002261
     },
     "deepResearch": {
-      "model": "perplexity/sonar-pro",
+      "model": "perplexity/sonar",
       "inputTokens": 0,
       "outputTokens": 0,
       "totalTokens": 0,

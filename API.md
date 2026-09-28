@@ -188,7 +188,7 @@ curl -X POST https://benriched.vercel.app/v1/enrich/company \
   "cost": {
     "ai": {
       "pass1": {
-        "model": "perplexity/sonar-pro",
+        "model": "perplexity/sonar",
         "inputTokens": 996,
         "outputTokens": 1156,
         "totalTokens": 2152,
